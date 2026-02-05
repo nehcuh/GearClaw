@@ -69,7 +69,7 @@ impl Agent {
     pub async fn start_interactive(&self) -> Result<(), GearClawError> {
         let mut session = self.session_manager.get_or_create_session("interactive")?;
         
-        println!("🦞 GearClaw 交互模式已启动");
+        println!("⚙️ GearClaw 交互模式已启动");
         println!("输入 'exit' 或 'quit' 退出");
         println!("输入 'clear' 清除对话历史");
         println!("输入 'help' 查看可用命令");

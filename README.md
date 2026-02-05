@@ -39,7 +39,7 @@ GearClaw 是一个用 Rust 实现的 OpenClaw AI 助手原型框架。它提供�
 
 ```bash
 # 克隆或下载项目
-cd gear_claw
+cd gearclaw
 
 # 构建（开发模式）
 cargo build
@@ -50,7 +50,7 @@ cargo run
 
 ### 配置
 
-创建配置文件 `~/.openclaw/gear_claw.toml`：
+创建配置文件 `~/.openclaw/gearclaw.toml`：
 
 ```toml
 [llm]
@@ -118,7 +118,7 @@ cargo run -- delete-session session-id
 ## 🏗️ 项目结构
 
 ```
-gear_claw/
+gearclaw/
 ├── src/
 │   ├── main.rs          # 入口，CLI 解析和命令分发
 │   ├── cli.rs          # CLI 定义

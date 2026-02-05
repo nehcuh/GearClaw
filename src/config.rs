@@ -175,9 +175,9 @@ impl Config {
             // Default locations
             let default_paths = vec![
                 dirs::home_dir().map(|h| h.join(".gearclaw/config.toml")),
-                dirs::home_dir().map(|h| h.join(".openclaw/gear_claw.toml")),
-                dirs::config_dir().map(|c| c.join("gear_claw.toml")),
-                Some(PathBuf::from("./gear_claw.toml")),
+                dirs::home_dir().map(|h| h.join(".openclaw/gearclaw.toml")),
+                dirs::config_dir().map(|c| c.join("gearclaw.toml")),
+                Some(PathBuf::from("./gearclaw.toml")),
             ];
             
             default_paths
@@ -185,7 +185,7 @@ impl Config {
                 .flatten()
                 .find(|p| p.exists())
                 .ok_or_else(|| GearClawError::ConfigNotFound(
-                    "未找到配置文件。请运行 `gear_claw init` 进行初始化，或手动创建 ~/.gearclaw/config.toml".to_string()
+                    "未找到配置文件。请运行 `gearclaw init` 进行初始化，或手动创建 ~/.gearclaw/config.toml".to_string()
                 ))?
         };
         

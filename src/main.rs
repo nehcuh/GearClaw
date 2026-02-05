@@ -21,14 +21,14 @@ use crate::config::Config;
 async fn main() -> Result<(), GearClawError> {
     // Initialize tracing
     let env_filter = EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| EnvFilter::new("gear_claw=info,warn"));
+        .unwrap_or_else(|_| EnvFilter::new("gearclaw=info,warn"));
     
     tracing_subscriber::registry()
         .with(env_filter)
         .with(fmt::layer())
         .init();
 
-    info!("🦞 GearClaw - OpenClaw Rust 原型");
+    info!("⚙️ GearClaw - OpenClaw Rust 原型");
     info!("版本: 0.1.0");
     info!("");
 
@@ -44,7 +44,7 @@ async fn main() -> Result<(), GearClawError> {
     // Handle ConfigSample immediately without loading config
     if let Some(Commands::ConfigSample { output }) = &cli.command {
         let sample_config = Config::sample();
-        let path = output.clone().unwrap_or_else(|| std::path::PathBuf::from("./gear_claw.sample.toml"));
+        let path = output.clone().unwrap_or_else(|| std::path::PathBuf::from("./gearclaw.sample.toml"));
         sample_config.save(&path)?;
         println!("✅ 示例配置已生成: {:?}", path);
         return Ok(());
@@ -125,7 +125,7 @@ fn handle_init() -> Result<(), GearClawError> {
     use std::io::{self, Write};
     use std::path::PathBuf;
 
-    println!("🦞 GearClaw 初始化");
+    println!("⚙️ GearClaw 初始化");
     println!("================");
 
     let home = dirs::home_dir().ok_or_else(|| GearClawError::ConfigNotFound("无法找到用户主目录".to_string()))?;
@@ -217,7 +217,7 @@ echo "Hello from GearClaw Skill!"
     config.save(&config_path)?;
     println!("✅ 配置文件已保存: {:?}", config_path);
     
-    println!("\n🎉 初始化完成! 你现在可以运行 `gear_claw` 开始使用了。");
+    println!("\n🎉 初始化完成! 你现在可以运行 `gearclaw` 开始使用了。");
 
     Ok(())
 }
