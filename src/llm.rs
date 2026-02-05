@@ -189,6 +189,9 @@ impl LLMClient {
         
         let url = format!("{}/chat/completions", self.endpoint.trim_end_matches('/'));
         
+        info!("Sending chat completion request to: {}", url);
+        info!("Model: {}", self.model);
+        
         let response = self.client
             .post(&url)
             .header("Authorization", format!("Bearer {}", self.api_key))
@@ -212,15 +215,17 @@ impl LLMClient {
             .map(|event| {
                 match event {
                     Ok(event) => {
+                        // tracing::debug!("Received event: {:?}", event.data); // Uncomment for verbose debug
                         if event.data == "[DONE]" {
-                            // End of stream, we can probably filter this out or handle it
-                            // For now let's just ignore it by returning an error that will be filtered?
-                            // Or better, we make the stream item Option?
-                            // Let's rely on JSON parse error to filter it out or explicit check
                             Err(GearClawError::LLMResponseError("Stream finished".to_string()))
                         } else {
-                            serde_json::from_str::<ChatCompletionStreamResponse>(&event.data)
-                                .map_err(|e| GearClawError::SerdeError(e))
+                            match serde_json::from_str::<ChatCompletionStreamResponse>(&event.data) {
+                                Ok(response) => Ok(response),
+                                Err(e) => {
+                                    tracing::error!("JSON Parse Error. Data: {}", event.data);
+                                    Err(GearClawError::SerdeError(e))
+                                }
+                            }
                         }
                     }
                     Err(e) => Err(GearClawError::LLMError(format!("Stream error: {}", e))),
