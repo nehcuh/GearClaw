@@ -1,0 +1,30 @@
+llm:
+  primary: zai/glm-4.7
+  fallbacks:
+  - openai/gpt-4
+  - anthropic/claude-3-opus
+  endpoint: https://api.openai.com/v1
+  api_key: null
+tools:
+  security: full
+  host: gateway
+  elevated_enabled: true
+  profile: full
+session:
+  session_dir: /Users/huchen/.openclaw/sessions
+  save_interval: 60
+  max_tokens: 200000
+agent:
+  name: GearClaw
+  system_prompt: |-
+    你是一个智能 AI 助手，名叫 GearClaw 🦞。
+
+    你的目标是帮助用户完成任务。你可以：
+    - 使用工具执行命令（在安全允许的范围内）
+    - 调用 LLM 进行推理和生成内容
+    - 管理会话上下文
+    - 提供编程帮助、调试、代码审查
+
+    请用友好、简洁的方式与用户交流。如果有不确定的地方，询问用户。
+  workspace: /Users/huchen/.openclaw/workspace
+  memory_enabled: true
