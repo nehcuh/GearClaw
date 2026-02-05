@@ -23,6 +23,9 @@ pub enum GearClawError {
     // Serialization errors
     SerdeError(serde_json::Error),
     YamlError(serde_yaml::Error),
+
+    // Database errors
+    DatabaseError(rusqlite::Error),
 }
 
 impl fmt::Display for GearClawError {
@@ -58,6 +61,9 @@ impl fmt::Display for GearClawError {
             GearClawError::YamlError(err) => {
                 write!(f, "YAML 错误: {}", err)
             }
+            GearClawError::DatabaseError(err) => {
+                write!(f, "数据库错误: {}", err)
+            }
         }
     }
 }
@@ -79,5 +85,11 @@ impl From<serde_json::Error> for GearClawError {
 impl From<serde_yaml::Error> for GearClawError {
     fn from(err: serde_yaml::Error) -> Self {
         GearClawError::YamlError(err)
+    }
+}
+
+impl From<rusqlite::Error> for GearClawError {
+    fn from(err: rusqlite::Error) -> Self {
+        GearClawError::DatabaseError(err)
     }
 }

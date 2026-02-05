@@ -3,19 +3,22 @@ use crate::llm::{LLMClient, Message, ToolCall, FunctionCall};
 use crate::tools::{ToolExecutor, ToolResult};
 use crate::session::{Session, SessionManager};
 use crate::skills::SkillManager;
+use crate::memory::MemoryManager;
 use crate::error::GearClawError;
 use tracing::{info, error};
 use serde_json::{json, Value};
 use futures::StreamExt;
 use std::io::Write;
 use std::collections::HashMap;
+use std::sync::Arc;
 
 pub struct Agent {
     config: Config,
-    llm_client: LLMClient,
+    llm_client: Arc<LLMClient>,
     tool_executor: ToolExecutor,
     pub session_manager: SessionManager,
     skill_manager: SkillManager,
+    pub memory_manager: MemoryManager,
 }
 
 impl Agent {
@@ -31,11 +34,12 @@ impl Agent {
         let endpoint = std::env::var("OPENAI_BASE_URL")
             .unwrap_or_else(|_| config.llm.endpoint.clone());
 
-        let llm_client = LLMClient::new(
+        let llm_client = Arc::new(LLMClient::new(
             api_key,
             endpoint,
             config.llm.primary.clone(),
-        );
+            config.llm.embedding_model.clone(),
+        ));
         
         let tool_executor = ToolExecutor::new(&config.tools.security);
         
@@ -46,12 +50,19 @@ impl Agent {
 
         let session_manager = SessionManager::new(config.session.clone())?;
         
+        let memory_manager = MemoryManager::new(
+            config.memory.clone(),
+            config.agent.workspace.clone(),
+            llm_client.clone(),
+        )?;
+        
         Ok(Agent {
             config,
             llm_client,
             tool_executor,
             session_manager,
             skill_manager,
+            memory_manager,
         })
     }
     

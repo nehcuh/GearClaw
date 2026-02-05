@@ -15,6 +15,18 @@ pub struct Config {
     
     /// Agent configuration
     pub agent: AgentConfig,
+
+    /// Memory configuration
+    #[serde(default = "default_memory_config")]
+    pub memory: MemoryConfig,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MemoryConfig {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default = "default_memory_db_path")]
+    pub db_path: PathBuf,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -33,6 +45,14 @@ pub struct LLMConfig {
     /// API key (optional, can be loaded from env)
     #[serde(default)]
     pub api_key: Option<String>,
+
+    /// Embedding model
+    #[serde(default = "default_embedding_model")]
+    pub embedding_model: String,
+}
+
+fn default_embedding_model() -> String {
+    "embedding-3".to_string()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -136,6 +156,17 @@ fn default_system_prompt() -> String {
 "#.trim().to_string()
 }
 
+fn default_memory_config() -> MemoryConfig {
+    MemoryConfig {
+        enabled: true,
+        db_path: default_memory_db_path(),
+    }
+}
+
+fn default_memory_db_path() -> PathBuf {
+    dirs::home_dir().unwrap().join(".gearclaw/memory/index.sqlite")
+}
+
 impl Config {
     pub fn load(path: &Option<String>) -> Result<Self, GearClawError> {
         let config_path = if let Some(p) = path {
@@ -188,6 +219,7 @@ impl Config {
                 ],
                 endpoint: default_endpoint(),
                 api_key: None,
+                embedding_model: default_embedding_model(),
             },
             tools: ToolsConfig {
                 security: default_security(),
@@ -211,6 +243,7 @@ impl Config {
                 memory_enabled: true,
                 skills_path: default_skills_path(),
             },
+            memory: default_memory_config(),
         }
     }
 }

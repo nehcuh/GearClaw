@@ -6,6 +6,7 @@ mod session;
 mod tools;
 mod skills;
 mod cli;
+mod memory;
 
 use clap::Parser;
 use tracing::info;
@@ -89,6 +90,27 @@ async fn main() -> Result<(), GearClawError> {
             let _ = agent.process_message(&mut sess, &prompt).await?;
             println!(); // Ensure newline
             agent.session_manager.save_session(&sess).await?;
+        }
+        Some(Commands::Memory { command }) => {
+            match command {
+                crate::cli::MemoryCommands::Sync => {
+                    agent.memory_manager.sync().await?;
+                    println!("✅ 记忆同步完成");
+                }
+                crate::cli::MemoryCommands::Search { query } => {
+                    let results = agent.memory_manager.search(&query, 5).await?;
+                    if results.is_empty() {
+                         println!("没有找到相关记忆");
+                    } else {
+                         println!("🔍 搜索结果:");
+                         for (i, res) in results.iter().enumerate() {
+                             println!("{}. [{:.2}] {} (Line {})", i+1, res.score, res.path, res.start_line.unwrap_or(0));
+                             let preview: String = res.text.lines().take(1).collect::<String>().chars().take(80).collect();
+                             println!("   {}...", preview);
+                         }
+                    }
+                }
+            }
         }
         None => {
             // Default to interactive mode

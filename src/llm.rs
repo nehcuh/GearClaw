@@ -87,16 +87,33 @@ pub struct ToolFunction {
     pub parameters: serde_json::Value,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EmbeddingRequest {
+    pub model: String,
+    pub input: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EmbeddingResponse {
+    pub data: Vec<EmbeddingData>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EmbeddingData {
+    pub embedding: Vec<f32>,
+}
+
 /// LLM client for making API calls
 pub struct LLMClient {
     client: Client,
     api_key: String,
     endpoint: String,
     model: String,
+    embedding_model: String,
 }
 
 impl LLMClient {
-    pub fn new(api_key: String, endpoint: String, model: String) -> Self {
+    pub fn new(api_key: String, endpoint: String, model: String, embedding_model: String) -> Self {
         LLMClient {
             client: Client::builder()
                 .http1_only()
@@ -105,7 +122,44 @@ impl LLMClient {
             api_key,
             endpoint,
             model,
+            embedding_model,
         }
+    }
+
+    /// Get embedding for text
+    pub async fn get_embedding(&self, text: &str) -> Result<Vec<f32>, GearClawError> {
+        let request = EmbeddingRequest {
+            model: self.embedding_model.clone(),
+            input: text.to_string(),
+        };
+
+        let url = format!("{}/embeddings", self.endpoint.trim_end_matches('/'));
+
+        let response = self.client
+            .post(&url)
+            .header("Authorization", format!("Bearer {}", self.api_key))
+            .header("Content-Type", "application/json")
+            .json(&request)
+            .send()
+            .await
+            .map_err(|e| GearClawError::LLMError(format!("Embedding 请求失败: {}", e)))?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let error_text = response.text().await.unwrap_or_default();
+            return Err(GearClawError::LLMResponseError(
+                format!("Embedding API 错误 {}: {}", status, error_text)
+            ));
+        }
+
+        let embedding_response: EmbeddingResponse = response.json().await
+            .map_err(|e| GearClawError::LLMError(format!("JSON 解析失败: {}", e)))?;
+
+        embedding_response.data
+            .into_iter()
+            .next()
+            .map(|d| d.embedding)
+            .ok_or_else(|| GearClawError::LLMResponseError("No embedding returned".to_string()))
     }
     
 

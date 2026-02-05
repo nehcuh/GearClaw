@@ -45,4 +45,20 @@ pub enum Commands {
 
     /// Initialize configuration
     Init,
+
+    /// Memory management
+    Memory {
+        #[command(subcommand)]
+        command: MemoryCommands,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+pub enum MemoryCommands {
+    /// Sync memory index
+    Sync,
+    /// Search memory
+    Search {
+        query: String,
+    },
 }
