@@ -28,7 +28,8 @@ async fn main() -> Result<(), GearClawError> {
         .with(fmt::layer())
         .init();
 
-    info!("⚙️ GearClaw - OpenClaw Rust 原型");
+    print_banner();
+    info!("🦾⚙️ GearClaw - OpenClaw Rust 原型");
     info!("版本: 0.1.0");
     info!("");
 
@@ -121,11 +122,21 @@ async fn main() -> Result<(), GearClawError> {
     Ok(())
 }
 
+fn print_banner() {
+    println!(r#"
+   ______                  ________            
+  / ____/___  ____ ______ / ____/ /___ __      __
+ / / __/ __ \/ __ `/ ___// /   / / __ `/ | /| / /
+/ /_/ /  ___/ /_/ / /   / /___/ / /_/ /| |/ |/ / 
+\____/\____/\__,_/_/    \____/_/\__,_/ |__/|__/  
+    "#);
+}
+
 fn handle_init() -> Result<(), GearClawError> {
     use std::io::{self, Write};
     use std::path::PathBuf;
 
-    println!("⚙️ GearClaw 初始化");
+    println!("🦾⚙️ GearClaw 初始化");
     println!("================");
 
     let home = dirs::home_dir().ok_or_else(|| GearClawError::ConfigNotFound("无法找到用户主目录".to_string()))?;
