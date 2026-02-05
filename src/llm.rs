@@ -134,7 +134,10 @@ impl LLMClient {
         };
 
         let url = format!("{}/embeddings", self.endpoint.trim_end_matches('/'));
-
+        
+        info!("Sending embedding request to: {}", url);
+        info!("Model: {}", self.embedding_model);
+        
         let response = self.client
             .post(&url)
             .header("Authorization", format!("Bearer {}", self.api_key))
