@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use serde_json::json;
 use tokio::process::Command;
 use tracing::{info, error, debug};
 use crate::error::GearClawError;
@@ -8,6 +9,8 @@ pub struct ToolSpec {
     pub name: String,
     pub description: String,
     pub requires_args: bool,
+    #[serde(default)]
+    pub parameters: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -145,41 +148,91 @@ impl ToolExecutor {
                 name: "exec".to_string(),
                 description: "执行 shell 命令".to_string(),
                 requires_args: true,
+                parameters: Some(json!({
+                    "type": "object",
+                    "properties": {
+                        "command": { "type": "string", "description": "要执行的命令" },
+                        "args": { "type": "array", "items": { "type": "string" }, "description": "命令参数" }
+                    },
+                    "required": ["command"]
+                })),
             },
             ToolSpec {
                 name: "read_file".to_string(),
                 description: "读取文件内容 (支持行号范围)".to_string(),
                 requires_args: true,
+                parameters: Some(json!({
+                    "type": "object",
+                    "properties": {
+                        "path": { "type": "string", "description": "文件路径" },
+                        "start_line": { "type": "integer", "description": "起始行号 (1-based, 可选)" },
+                        "end_line": { "type": "integer", "description": "结束行号 (1-based, 可选)" }
+                    },
+                    "required": ["path"]
+                })),
             },
             ToolSpec {
                 name: "write_file".to_string(),
                 description: "写入文件内容".to_string(),
                 requires_args: true,
+                parameters: Some(json!({
+                    "type": "object",
+                    "properties": {
+                        "path": { "type": "string", "description": "文件路径" },
+                        "content": { "type": "string", "description": "文件内容" }
+                    },
+                    "required": ["path", "content"]
+                })),
             },
             ToolSpec {
                 name: "list_files".to_string(),
                 description: "列出目录下的文件和子目录".to_string(),
                 requires_args: true,
+                parameters: Some(json!({
+                    "type": "object",
+                    "properties": {
+                        "path": { "type": "string", "description": "目录路径 (默认当前目录)" },
+                        "recursive": { "type": "boolean", "description": "是否递归列出子目录" },
+                        "max_depth": { "type": "integer", "description": "最大递归深度" }
+                    },
+                    "required": []
+                })),
             },
             ToolSpec {
                 name: "file_info".to_string(),
                 description: "获取文件或目录的元数据(大小、修改时间等)".to_string(),
                 requires_args: true,
+                parameters: Some(json!({
+                    "type": "object",
+                    "properties": {
+                        "path": { "type": "string", "description": "文件或目录路径" }
+                    },
+                    "required": ["path"]
+                })),
             },
             ToolSpec {
                 name: "web_search".to_string(),
                 description: "搜索网页内容".to_string(),
                 requires_args: true,
+                parameters: Some(json!({
+                    "type": "object",
+                    "properties": {
+                        "query": { "type": "string", "description": "搜索查询" }
+                    },
+                    "required": ["query"]
+                })),
             },
             ToolSpec {
                 name: "git_status".to_string(),
                 description: "查看 Git 状态".to_string(),
                 requires_args: false,
+                parameters: None,
             },
             ToolSpec {
                 name: "docker_ps".to_string(),
                 description: "列出运行中的容器".to_string(),
                 requires_args: false,
+                parameters: None,
             },
         ]
     }

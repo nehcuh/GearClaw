@@ -141,7 +141,7 @@ gearclaw/
 
 - `tokio` - 异步运行时
 - `serde` - 序列化/反序列化
-- `serde_yaml` - YAML 配置支持
+- `serde_yml` - YAML 配置支持
 - `reqwest` - HTTP 客户端
 - `clap` - CLI 解析
 - `tracing` - 日志和追踪

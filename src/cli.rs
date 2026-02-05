@@ -51,6 +51,9 @@ pub enum Commands {
         #[command(subcommand)]
         command: MemoryCommands,
     },
+
+    /// Test MCP integration
+    TestMcp,
 }
 
 #[derive(Subcommand, Debug)]

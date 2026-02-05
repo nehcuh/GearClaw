@@ -22,7 +22,7 @@ pub enum GearClawError {
     
     // Serialization errors
     SerdeError(serde_json::Error),
-    YamlError(serde_yaml::Error),
+    YamlError(serde_yml::Error),
 
     // Database errors
     DatabaseError(rusqlite::Error),
@@ -82,8 +82,8 @@ impl From<serde_json::Error> for GearClawError {
     }
 }
 
-impl From<serde_yaml::Error> for GearClawError {
-    fn from(err: serde_yaml::Error) -> Self {
+impl From<serde_yml::Error> for GearClawError {
+    fn from(err: serde_yml::Error) -> Self {
         GearClawError::YamlError(err)
     }
 }

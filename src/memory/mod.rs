@@ -4,7 +4,7 @@ use crate::config::MemoryConfig;
 use crate::error::GearClawError;
 use std::sync::{Arc, Mutex};
 use crate::llm::LLMClient;
-use tracing::{info, warn, debug};
+use tracing::{info, warn};
 use sha2::{Sha256, Digest};
 use std::fs;
 use glob::glob;
@@ -16,12 +16,6 @@ pub struct MemoryManager {
     llm_client: Arc<LLMClient>,
 }
 
-#[derive(Debug)]
-struct MemoryFile {
-    path: String,
-    hash: String,
-    mtime: i64,
-}
 
 #[derive(Debug, Clone)]
 pub struct SearchResult {

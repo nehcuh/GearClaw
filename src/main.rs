@@ -7,6 +7,7 @@ mod tools;
 mod skills;
 mod cli;
 mod memory;
+mod mcp;
 
 use clap::Parser;
 use tracing::info;
@@ -113,6 +114,69 @@ async fn main() -> Result<(), GearClawError> {
                 }
             }
         }
+        Some(Commands::TestMcp) => {
+            println!("🧪 Testing System Capabilities...");
+            println!("================================");
+
+            // 1. Verify Skills
+            println!("\n📘 [1/3] Verifying Skills...");
+            let skills = &agent.skill_manager.skills;
+            if skills.is_empty() {
+                println!("⚠️  No skills loaded.");
+            } else {
+                println!("✅ Loaded {} skills:", skills.len());
+                for skill in skills {
+                    println!("  • {} ({})", skill.name, skill.path.display());
+                }
+            }
+
+            // 2. Verify MCP
+            println!("\n🔌 [2/3] Verifying MCP Connection...");
+            let tools = agent.mcp_manager.list_tools().await;
+            if tools.is_empty() {
+                println!("⚠️  No MCP tools found. Is the server running?");
+            } else {
+                println!("✅ Found {} MCP tools.", tools.len());
+                // List first 3 tools
+                for tool in tools.iter().take(3) {
+                    println!("  • {}", tool.name);
+                }
+                if tools.len() > 3 {
+                    println!("  ... and {} more", tools.len() - 3);
+                }
+            }
+
+            // 3. Verify Agent Tool Execution (Mock)
+            println!("\n🤖 [3/3] Verifying Agent Tool Execution (Mock Integration)...");
+            // Create a dummy session
+            let mut session = agent.session_manager.get_or_create_session("test_session")?;
+            
+            // Define a test case
+            let target_tool = "filesystem__list_directory";
+            if tools.iter().any(|t| t.name == target_tool) {
+                let args_str = r#"{"path": "/private/tmp"}"#;
+                println!("Simulating Agent calling '{}' with args: {}", target_tool, args_str);
+                
+                match agent.execute_tool_call(&mut session, target_tool, args_str).await {
+                    Ok(result) => {
+                        if result.success {
+                            println!("✅ Agent successfully executed MCP tool!");
+                            println!("Output snippet: {}", result.output.lines().take(3).collect::<Vec<_>>().join("\n"));
+                        } else {
+                            println!("❌ Agent executed tool but it returned failure.");
+                            println!("Error: {:?}", result.error);
+                        }
+                    },
+                    Err(e) => {
+                        println!("❌ Agent failed to execute tool: {}", e);
+                    }
+                }
+            } else {
+                println!("⚠️  Skipping Agent Mock test: '{}' tool not found.", target_tool);
+            }
+            
+            println!("\n✨ Verification Complete.");
+        }
         None => {
             // Default to interactive mode
             agent.start_interactive().await?;
@@ -134,7 +198,6 @@ fn print_banner() {
 
 fn handle_init() -> Result<(), GearClawError> {
     use std::io::{self, Write};
-    use std::path::PathBuf;
 
     println!("🦾⚙️ GearClaw 初始化");
     println!("================");

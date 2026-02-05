@@ -4,6 +4,7 @@ use crate::tools::{ToolExecutor, ToolResult};
 use crate::session::{Session, SessionManager};
 use crate::skills::SkillManager;
 use crate::memory::MemoryManager;
+use crate::mcp::McpManager;
 use crate::error::GearClawError;
 use tracing::{info, error};
 use serde_json::{json, Value};
@@ -17,8 +18,9 @@ pub struct Agent {
     llm_client: Arc<LLMClient>,
     tool_executor: ToolExecutor,
     pub session_manager: SessionManager,
-    skill_manager: SkillManager,
+    pub skill_manager: SkillManager,
     pub memory_manager: MemoryManager,
+    pub mcp_manager: Arc<McpManager>,
 }
 
 impl Agent {
@@ -48,6 +50,11 @@ impl Agent {
             tracing::warn!("Failed to load skills: {}", e);
         }
 
+        let mcp_manager = Arc::new(McpManager::new(config.mcp.clone()));
+        if let Err(e) = mcp_manager.init_clients().await {
+            tracing::error!("Failed to initialize MCP clients: {}", e);
+        }
+
         let session_manager = SessionManager::new(config.session.clone())?;
         
         let memory_manager = MemoryManager::new(
@@ -63,6 +70,7 @@ impl Agent {
             session_manager,
             skill_manager,
             memory_manager,
+            mcp_manager,
         })
     }
     
@@ -134,7 +142,10 @@ impl Agent {
         while loop_count < 15 {
             loop_count += 1;
             
-            let tool_specs = self.tool_executor.available_tools();
+            let mut tool_specs = self.tool_executor.available_tools();
+            let mcp_tools = self.mcp_manager.list_tools().await;
+            tool_specs.extend(mcp_tools);
+            
             let llm_tools = self.convert_to_llm_tools(tool_specs);
             
             // Construct messages with system prompt and skills context
@@ -252,9 +263,14 @@ impl Agent {
         Ok(final_response_content)
     }
     
-    async fn execute_tool_call(&self, session: &mut Session, tool_name: &str, arguments: &str) -> Result<ToolResult, GearClawError> {
+    pub async fn execute_tool_call(&self, session: &mut Session, tool_name: &str, arguments: &str) -> Result<ToolResult, GearClawError> {
         let args: Value = serde_json::from_str(arguments).unwrap_or(json!({}));
         
+        // Check if it's an MCP tool
+        if tool_name.contains("__") {
+            return self.mcp_manager.call_tool(tool_name, args).await;
+        }
+
         match tool_name {
             "exec" => {
                 if let Some(cmd) = args.get("command").and_then(|v| v.as_str()) {
@@ -476,61 +492,11 @@ impl Agent {
     
     fn convert_to_llm_tools(&self, tools: Vec<crate::tools::ToolSpec>) -> Vec<crate::llm::ToolSpec> {
         tools.into_iter().map(|tool| {
-            let parameters = match tool.name.as_str() {
-                "exec" => json!({
-                    "type": "object",
-                    "properties": {
-                        "command": { "type": "string", "description": "要执行的命令" },
-                        "args": { "type": "array", "items": { "type": "string" }, "description": "命令参数" }
-                    },
-                    "required": ["command"]
-                }),
-                "read_file" => json!({
-                    "type": "object",
-                    "properties": {
-                        "path": { "type": "string", "description": "文件路径" },
-                        "start_line": { "type": "integer", "description": "起始行号 (1-based, 可选)" },
-                        "end_line": { "type": "integer", "description": "结束行号 (1-based, 可选)" }
-                    },
-                    "required": ["path"]
-                }),
-                "write_file" => json!({
-                    "type": "object",
-                    "properties": {
-                        "path": { "type": "string", "description": "文件路径" },
-                        "content": { "type": "string", "description": "文件内容" }
-                    },
-                    "required": ["path", "content"]
-                }),
-                "list_files" => json!({
-                    "type": "object",
-                    "properties": {
-                        "path": { "type": "string", "description": "目录路径 (默认当前目录)" },
-                        "recursive": { "type": "boolean", "description": "是否递归列出子目录" },
-                        "max_depth": { "type": "integer", "description": "最大递归深度" }
-                    },
-                    "required": []
-                }),
-                "file_info" => json!({
-                    "type": "object",
-                    "properties": {
-                        "path": { "type": "string", "description": "文件或目录路径" }
-                    },
-                    "required": ["path"]
-                }),
-                "web_search" => json!({
-                    "type": "object",
-                    "properties": {
-                        "query": { "type": "string", "description": "搜索查询" }
-                    },
-                    "required": ["query"]
-                }),
-                _ => json!({
-                    "type": "object",
-                    "properties": {},
-                    "required": []
-                })
-            };
+            let parameters = tool.parameters.unwrap_or_else(|| json!({
+                "type": "object",
+                "properties": {},
+                "required": []
+            }));
 
             crate::llm::ToolSpec {
                 r#type: "function".to_string(),

@@ -91,7 +91,7 @@ impl SkillManager {
              return Err(GearClawError::ConfigParseError(format!("Invalid skill file format in {:?}: content before frontmatter", path)));
         };
 
-        let meta: SkillMetadata = serde_yaml::from_str(frontmatter)
+        let meta: SkillMetadata = serde_yml::from_str(frontmatter)
             .map_err(|e| GearClawError::ConfigParseError(format!("Invalid skill metadata in {:?}: {}", path, e)))?;
 
         let skill = Skill {

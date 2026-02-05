@@ -2,6 +2,8 @@ use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use crate::error::GearClawError;
 
+use std::collections::HashMap;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
     /// LLM provider configuration
@@ -19,6 +21,31 @@ pub struct Config {
     /// Memory configuration
     #[serde(default = "default_memory_config")]
     pub memory: MemoryConfig,
+
+    /// MCP configuration
+    #[serde(default = "default_mcp_config")]
+    pub mcp: McpConfig,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct McpConfig {
+    #[serde(default)]
+    pub servers: HashMap<String, McpServerConfig>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct McpServerConfig {
+    pub command: String,
+    #[serde(default)]
+    pub args: Vec<String>,
+    #[serde(default)]
+    pub env: HashMap<String, String>,
+}
+
+fn default_mcp_config() -> McpConfig {
+    McpConfig {
+        servers: HashMap::new(),
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -192,14 +219,14 @@ impl Config {
         let content = std::fs::read_to_string(&config_path)
             .map_err(|e| GearClawError::ConfigParseError(format!("读取失败: {}", e)))?;
         
-        let config: Config = serde_yaml::from_str(&content)
+        let config: Config = serde_yml::from_str(&content)
             .map_err(|e| GearClawError::ConfigParseError(format!("解析失败: {}", e)))?;
         
         Ok(config)
     }
     
     pub fn save(&self, path: &PathBuf) -> Result<(), GearClawError> {
-        let content = serde_yaml::to_string(self)
+        let content = serde_yml::to_string(self)
             .map_err(|e| GearClawError::ConfigParseError(format!("序列化失败: {}", e)))?;
         
         std::fs::write(path, content)
@@ -244,6 +271,7 @@ impl Config {
                 skills_path: default_skills_path(),
             },
             memory: default_memory_config(),
+            mcp: default_mcp_config(),
         }
     }
 }
