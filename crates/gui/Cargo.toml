@@ -1,0 +1,18 @@
+[package]
+name = "gearclaw_gui"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+gearclaw_core = { path = "../core" }
+gpui = { git = "https://github.com/zed-industries/zed", package = "gpui" }
+tokio = { version = "1.49", features = ["full"] }
+anyhow = "1.0"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+log = "0.4"
+unicode-segmentation = "1.11"
+futures = "0.3"
+uuid = { version = "1.10", features = ["v4"] }
+dirs = "5.0"
+chrono = "0.4"

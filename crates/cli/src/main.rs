@@ -1,22 +1,13 @@
-mod agent;
-mod config;
-mod error;
-mod llm;
-mod session;
-mod tools;
-mod skills;
 mod cli;
-mod memory;
-mod mcp;
 
 use clap::Parser;
 use tracing::info;
 use tracing_subscriber::{fmt, EnvFilter, prelude::*};
 
 use crate::cli::{Cli, Commands};
-use crate::error::GearClawError;
-use crate::agent::Agent;
-use crate::config::Config;
+use gearclaw_core::error::GearClawError;
+use gearclaw_core::agent::Agent;
+use gearclaw_core::config::Config;
 
 #[tokio::main]
 async fn main() -> Result<(), GearClawError> {
