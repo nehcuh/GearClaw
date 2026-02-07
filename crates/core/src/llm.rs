@@ -1,11 +1,11 @@
-use serde::{Deserialize, Serialize};
-use reqwest::Client;
-use tracing::info;
 use crate::error::GearClawError;
-use futures::Stream;
 use eventsource_stream::Eventsource;
+use futures::Stream;
 use futures::StreamExt;
+use reqwest::Client;
+use serde::{Deserialize, Serialize};
 use std::pin::Pin;
+use tracing::info;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Message {
@@ -78,7 +78,6 @@ pub struct FunctionCall {
     pub arguments: String,
 }
 
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ToolSpec {
     pub r#type: String,
@@ -139,11 +138,12 @@ impl LLMClient {
         };
 
         let url = format!("{}/embeddings", self.endpoint.trim_end_matches('/'));
-        
+
         info!("Sending embedding request to: {}", url);
         info!("Model: {}", self.embedding_model);
-        
-        let response = self.client
+
+        let response = self
+            .client
             .post(&url)
             .header("Authorization", format!("Bearer {}", self.api_key))
             .header("Content-Type", "application/json")
@@ -155,21 +155,24 @@ impl LLMClient {
         if !response.status().is_success() {
             let status = response.status();
             let error_text = response.text().await.unwrap_or_default();
-            return Err(GearClawError::LLMResponseError(
-                format!("Embedding API 错误 {}: {}", status, error_text)
-            ));
+            return Err(GearClawError::LLMResponseError(format!(
+                "Embedding API 错误 {}: {}",
+                status, error_text
+            )));
         }
 
-        let embedding_response: EmbeddingResponse = response.json().await
+        let embedding_response: EmbeddingResponse = response
+            .json()
+            .await
             .map_err(|e| GearClawError::LLMError(format!("JSON 解析失败: {}", e)))?;
 
-        embedding_response.data
+        embedding_response
+            .data
             .into_iter()
             .next()
             .map(|d| d.embedding)
             .ok_or_else(|| GearClawError::LLMResponseError("No embedding returned".to_string()))
     }
-    
 
     /// Send streaming chat completion request
     pub async fn chat_completion_stream(
@@ -177,27 +180,31 @@ impl LLMClient {
         messages: Vec<Message>,
         tools: Option<Vec<ToolSpec>>,
         max_tokens: Option<usize>,
-    ) -> Result<Pin<Box<dyn Stream<Item = Result<ChatCompletionStreamResponse, GearClawError>> + Send>>, GearClawError> {
+    ) -> Result<
+        Pin<Box<dyn Stream<Item = Result<ChatCompletionStreamResponse, GearClawError>> + Send>>,
+        GearClawError,
+    > {
         info!("发送 LLM 流式请求: {} 条消息", messages.len());
-        
-        let tool_choice = tools.as_ref().map(|_| "auto".to_string());
-        
+
+        // tool_choice is omitted to support local LLM servers that don't support this parameter
+        // The API will decide whether to use tools based on the presence of the tools array
         let request = ChatCompletionRequest {
             model: self.model.clone(),
             messages,
             max_tokens,
             temperature: Some(0.7),
             tools,
-            tool_choice,
+            tool_choice: None,
             stream: Some(true),
         };
-        
+
         let url = format!("{}/chat/completions", self.endpoint.trim_end_matches('/'));
-        
+
         info!("Sending chat completion request to: {}", url);
         info!("Model: {}", self.model);
-        
-        let response = self.client
+
+        let response = self
+            .client
             .post(&url)
             .header("Authorization", format!("Bearer {}", self.api_key))
             .header("Content-Type", "application/json")
@@ -205,37 +212,37 @@ impl LLMClient {
             .send()
             .await
             .map_err(|e| GearClawError::LLMError(format!("请求失败: {}", e)))?;
-            
+
         if !response.status().is_success() {
             let status = response.status();
             let error_text = response.text().await.unwrap_or_default();
-            return Err(GearClawError::LLMResponseError(
-                format!("API 错误 {}: {}", status, error_text)
-            ));
+            return Err(GearClawError::LLMResponseError(format!(
+                "API 错误 {}: {}",
+                status, error_text
+            )));
         }
 
-        let stream = response
-            .bytes_stream()
-            .eventsource()
-            .map(|event| {
-                match event {
-                    Ok(event) => {
-                        // tracing::debug!("Received event: {:?}", event.data); // Uncomment for verbose debug
-                        if event.data == "[DONE]" {
-                            Err(GearClawError::LLMResponseError("Stream finished".to_string()))
-                        } else {
-                            match serde_json::from_str::<ChatCompletionStreamResponse>(&event.data) {
-                                Ok(response) => Ok(response),
-                                Err(e) => {
-                                    tracing::error!("JSON Parse Error. Data: {}", event.data);
-                                    Err(GearClawError::SerdeError(e))
-                                }
+        let stream = response.bytes_stream().eventsource().map(|event| {
+            match event {
+                Ok(event) => {
+                    // tracing::debug!("Received event: {:?}", event.data); // Uncomment for verbose debug
+                    if event.data == "[DONE]" {
+                        Err(GearClawError::LLMResponseError(
+                            "Stream finished".to_string(),
+                        ))
+                    } else {
+                        match serde_json::from_str::<ChatCompletionStreamResponse>(&event.data) {
+                            Ok(response) => Ok(response),
+                            Err(e) => {
+                                tracing::error!("JSON Parse Error. Data: {}", event.data);
+                                Err(GearClawError::SerdeError(e))
                             }
                         }
                     }
-                    Err(e) => Err(GearClawError::LLMError(format!("Stream error: {}", e))),
                 }
-            });
+                Err(e) => Err(GearClawError::LLMError(format!("Stream error: {}", e))),
+            }
+        });
 
         Ok(Box::pin(stream))
     }

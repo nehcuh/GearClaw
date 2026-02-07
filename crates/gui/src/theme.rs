@@ -138,5 +138,5 @@ pub fn assistant_bubble(cx: &App) -> Rgba { current(cx).assistant_bubble }
 pub fn error_color(cx: &App) -> Rgba { current(cx).error_color }
 pub fn input_bg(cx: &App) -> Rgba { current(cx).input_bg }
 pub fn stop_button(cx: &App) -> Rgba { current(cx).stop_button }
-pub fn is_dark(cx: &App) -> bool { current(cx).is_dark }
+
 pub fn mode(cx: &App) -> ThemeMode { current(cx).mode }

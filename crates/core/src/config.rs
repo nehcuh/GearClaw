@@ -1,6 +1,6 @@
+use crate::error::GearClawError;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
-use crate::error::GearClawError;
 
 use std::collections::HashMap;
 
@@ -8,13 +8,13 @@ use std::collections::HashMap;
 pub struct Config {
     /// LLM provider configuration
     pub llm: LLMConfig,
-    
+
     /// Tool configuration
     pub tools: ToolsConfig,
-    
+
     /// Session configuration
     pub session: SessionConfig,
-    
+
     /// Agent configuration
     pub agent: AgentConfig,
 
@@ -60,15 +60,15 @@ pub struct MemoryConfig {
 pub struct LLMConfig {
     /// Primary model (e.g., "openai/gpt-4", "zai/glm-4.7")
     pub primary: String,
-    
+
     /// Fallback models
     #[serde(default)]
     pub fallbacks: Vec<String>,
-    
+
     /// API endpoint
     #[serde(default = "default_endpoint")]
     pub endpoint: String,
-    
+
     /// API key (optional, can be loaded from env)
     #[serde(default)]
     pub api_key: Option<String>,
@@ -87,15 +87,15 @@ pub struct ToolsConfig {
     /// Tool security level: deny, allowlist, full
     #[serde(default = "default_security")]
     pub security: String,
-    
+
     /// Exec host: gateway, sandbox, node
     #[serde(default = "default_host")]
     pub host: String,
-    
+
     /// Enable elevated tools
     #[serde(default)]
     pub elevated_enabled: bool,
-    
+
     /// Tool profile: minimal, coding, messaging, full
     #[serde(default = "default_profile")]
     pub profile: String,
@@ -105,11 +105,11 @@ pub struct ToolsConfig {
 pub struct SessionConfig {
     /// Session directory
     pub session_dir: PathBuf,
-    
+
     /// Auto-save interval in seconds
     #[serde(default = "default_save_interval")]
     pub save_interval: u64,
-    
+
     /// Maximum context tokens
     #[serde(default = "default_max_tokens")]
     pub max_tokens: usize,
@@ -120,14 +120,14 @@ pub struct AgentConfig {
     /// Agent name
     #[serde(default = "default_agent_name")]
     pub name: String,
-    
+
     /// System prompt
     #[serde(default = "default_system_prompt")]
     pub system_prompt: String,
-    
+
     /// Workspace directory
     pub workspace: PathBuf,
-    
+
     /// Enable memory search
     #[serde(default)]
     pub memory_enabled: bool,
@@ -141,7 +141,7 @@ fn default_skills_path() -> PathBuf {
     dirs::home_dir().unwrap().join(".gearclaw/skills")
 }
 
-fn default_endpoint() -> String {
+pub fn default_endpoint() -> String {
     "https://api.openai.com/v1".to_string()
 }
 
@@ -180,7 +180,9 @@ fn default_system_prompt() -> String {
 - 提供编程帮助、调试、代码审查
 
 请用友好、简洁的方式与用户交流。如果有不确定的地方，询问用户。
-"#.trim().to_string()
+"#
+    .trim()
+    .to_string()
 }
 
 fn default_memory_config() -> MemoryConfig {
@@ -191,7 +193,9 @@ fn default_memory_config() -> MemoryConfig {
 }
 
 fn default_memory_db_path() -> PathBuf {
-    dirs::home_dir().unwrap().join(".gearclaw/memory/index.sqlite")
+    dirs::home_dir()
+        .unwrap()
+        .join(".gearclaw/memory/index.sqlite")
 }
 
 impl Config {
@@ -202,11 +206,10 @@ impl Config {
             // Default locations
             let default_paths = vec![
                 dirs::home_dir().map(|h| h.join(".gearclaw/config.toml")),
-                dirs::home_dir().map(|h| h.join(".openclaw/gearclaw.toml")),
                 dirs::config_dir().map(|c| c.join("gearclaw.toml")),
                 Some(PathBuf::from("./gearclaw.toml")),
             ];
-            
+
             default_paths
                 .into_iter()
                 .flatten()
@@ -215,26 +218,25 @@ impl Config {
                     "未找到配置文件。请运行 `gearclaw init` 进行初始化，或手动创建 ~/.gearclaw/config.toml".to_string()
                 ))?
         };
-        
+
         let content = std::fs::read_to_string(&config_path)
             .map_err(|e| GearClawError::ConfigParseError(format!("读取失败: {}", e)))?;
-        
+
         let config: Config = serde_yml::from_str(&content)
             .map_err(|e| GearClawError::ConfigParseError(format!("解析失败: {}", e)))?;
-        
+
         Ok(config)
     }
-    
+
     pub fn save(&self, path: &PathBuf) -> Result<(), GearClawError> {
         let content = serde_yml::to_string(self)
             .map_err(|e| GearClawError::ConfigParseError(format!("序列化失败: {}", e)))?;
-        
-        std::fs::write(path, content)
-            .map_err(GearClawError::IoError)?;
-        
+
+        std::fs::write(path, content).map_err(GearClawError::IoError)?;
+
         Ok(())
     }
-    
+
     /// Generate a sample configuration file
     pub fn sample() -> Self {
         Config {
@@ -255,18 +257,14 @@ impl Config {
                 profile: default_profile(),
             },
             session: SessionConfig {
-                session_dir: dirs::home_dir()
-                    .unwrap()
-                    .join(".gearclaw/sessions"),
+                session_dir: dirs::home_dir().unwrap().join(".gearclaw/sessions"),
                 save_interval: default_save_interval(),
                 max_tokens: default_max_tokens(),
             },
             agent: AgentConfig {
                 name: default_agent_name(),
                 system_prompt: default_system_prompt(),
-                workspace: dirs::home_dir()
-                    .unwrap()
-                    .join(".gearclaw/workspace"),
+                workspace: dirs::home_dir().unwrap().join(".gearclaw/workspace"),
                 memory_enabled: true,
                 skills_path: default_skills_path(),
             },

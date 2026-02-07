@@ -1,7 +1,7 @@
-use gpui::*;
 use crate::app::{DesktopApp, ViewMode};
 use crate::theme;
 use gearclaw_core::config::Config;
+use gpui::*;
 
 impl DesktopApp {
     pub fn render_settings(&self, cx: &mut Context<Self>) -> impl IntoElement {
@@ -17,16 +17,11 @@ impl DesktopApp {
             .flex()
             .flex_col()
             .gap(px(20.))
+            .child(div().text_xl().child("⚙️ Settings"))
             .child(
-                div()
-                    .text_xl()
-                    .child("⚙️ Settings"),
-            )
-            .child(
-                div()
-                    .text_sm()
-                    .text_color(text_muted)
-                    .child("Configure LLM connection. Settings are saved to ~/.openclaw/gearclaw.toml"),
+                div().text_sm().text_color(text_muted).child(
+                    "Configure LLM connection. Settings are saved to ~/.gearclaw/config.toml",
+                ),
             )
             // Endpoint
             .child(self.render_field("Endpoint", &self.setting_endpoint, cx))
@@ -107,14 +102,16 @@ impl DesktopApp {
         let mut config = Config::load(&None).unwrap_or_else(|_| Config::sample());
 
         config.llm.endpoint = endpoint;
-        config.llm.api_key = if api_key.is_empty() { None } else { Some(api_key) };
+        config.llm.api_key = if api_key.is_empty() {
+            None
+        } else {
+            Some(api_key)
+        };
         config.llm.primary = model;
         config.llm.embedding_model = embedding;
 
         // Save to default path
-        let config_path = dirs::home_dir()
-            .unwrap()
-            .join(".openclaw/gearclaw.toml");
+        let config_path = dirs::home_dir().unwrap().join(".gearclaw/config.toml");
 
         // Ensure directory exists
         if let Some(parent) = config_path.parent() {

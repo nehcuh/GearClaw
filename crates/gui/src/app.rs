@@ -1,13 +1,11 @@
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
-use gpui::*;
 use gpui::prelude::FluentBuilder;
-use futures::StreamExt;
+use gpui::*;
 
 use gearclaw_core::config::Config;
-use gearclaw_core::llm::{LLMClient, Message};
 
 use crate::text_input::TextInput;
 use crate::theme;
@@ -22,7 +20,7 @@ pub enum ViewMode {
 /// A single chat message displayed in the UI.
 #[derive(Clone)]
 pub struct ChatMessage {
-    pub role: String,   // "user", "assistant", "error"
+    pub role: String, // "user", "assistant", "error"
     pub content: String,
 }
 
@@ -111,7 +109,11 @@ impl DesktopApp {
             scroll_handle: ScrollHandle::new(),
             is_loading: false,
             cancel_flag: Arc::new(AtomicBool::new(false)),
-            view_mode: if config_exists { ViewMode::Chat } else { ViewMode::Settings },
+            view_mode: if config_exists {
+                ViewMode::Chat
+            } else {
+                ViewMode::Settings
+            },
             window_title: "GearClaw".to_string(),
             show_logs: false,
             setting_endpoint,
@@ -126,7 +128,8 @@ impl DesktopApp {
 
     pub fn new_session(&mut self, cx: &mut Context<Self>) {
         // Save current session messages
-        self.session_messages.insert(self.active_session, std::mem::take(&mut self.messages));
+        self.session_messages
+            .insert(self.active_session, std::mem::take(&mut self.messages));
 
         let idx = self.sessions.len() + 1;
         self.sessions.push(format!("Chat {}", idx));
@@ -141,7 +144,8 @@ impl DesktopApp {
     pub fn switch_session(&mut self, index: usize, cx: &mut Context<Self>) {
         if index < self.sessions.len() && index != self.active_session {
             // Save current session messages
-            self.session_messages.insert(self.active_session, std::mem::take(&mut self.messages));
+            self.session_messages
+                .insert(self.active_session, std::mem::take(&mut self.messages));
             // Restore target session messages
             self.messages = self.session_messages.remove(&index).unwrap_or_default();
             self.active_session = index;
@@ -160,12 +164,20 @@ impl DesktopApp {
         // Update window title from first user message
         if self.messages.is_empty() {
             let title_preview: String = content.chars().take(30).collect();
-            let suffix = if content.chars().count() > 30 { "..." } else { "" };
+            let suffix = if content.chars().count() > 30 {
+                "..."
+            } else {
+                ""
+            };
             self.window_title = format!("{}{} - GearClaw", title_preview, suffix);
             // Also update the sidebar session name
             if self.active_session < self.sessions.len() {
                 let session_name: String = content.chars().take(20).collect();
-                let s_suffix = if content.chars().count() > 20 { "..." } else { "" };
+                let s_suffix = if content.chars().count() > 20 {
+                    "..."
+                } else {
+                    ""
+                };
                 self.sessions[self.active_session] = format!("{}{}", session_name, s_suffix);
             }
             window.set_window_title(&self.window_title);
@@ -223,11 +235,15 @@ impl DesktopApp {
                     this.is_loading = false;
                     cx.notify();
 
-                    // Auto-scroll to bottom
-                    this.scroll_handle.scroll_to_bottom();
-                    window.refresh();
+                    // Auto-scroll to bottom after next frame is rendered
+                    let scroll_handle = this.scroll_handle.clone();
+                    window.on_next_frame(move |window, _cx| {
+                        scroll_handle.scroll_to_bottom();
+                        window.refresh();
+                    });
                 });
-            }).ok();
+            })
+            .ok();
         })
         .detach();
     }
@@ -242,6 +258,31 @@ impl DesktopApp {
         cx.notify();
     }
 
+    pub fn regenerate_message(
+        &mut self,
+        message_index: usize,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        // Find the user message that triggered this assistant response
+        let user_message_index = self.messages[..message_index]
+            .iter()
+            .rposition(|m| m.role == "user");
+
+        if let Some(user_idx) = user_message_index {
+            let user_content = self.messages[user_idx].content.clone();
+
+            // Remove this assistant message and all subsequent messages
+            self.messages.truncate(message_index);
+
+            // Set the input to the user message and send
+            self.input.update(cx, |input, cx| {
+                input.set_content(&user_content, cx);
+            });
+            self.on_send(window, cx);
+        }
+    }
+
     fn on_send_action(&mut self, _: &SendMessage, window: &mut Window, cx: &mut Context<Self>) {
         self.on_send(window, cx);
     }
@@ -250,76 +291,33 @@ impl DesktopApp {
         user_message: String,
         cancel_flag: Arc<AtomicBool>,
     ) -> Result<String, String> {
-        // Load config to get LLM settings
+        use gearclaw_core::agent::Agent;
+        use gearclaw_core::session::Session;
+
+        // Load config and create Agent
         let config = Config::load(&None).map_err(|e| format!("{}", e))?;
 
-        let api_key = config.llm.api_key.clone()
-            .or_else(|| std::env::var("OPENAI_API_KEY").ok())
-            .ok_or_else(|| "未设置 API Key。请配置 OPENAI_API_KEY 环境变量".to_string())?;
-
-        let endpoint = std::env::var("OPENAI_BASE_URL")
-            .unwrap_or_else(|_| config.llm.endpoint.clone());
-
-        let llm_client = LLMClient::new(
-            api_key,
-            endpoint,
-            config.llm.primary.clone(),
-            config.llm.embedding_model.clone(),
-        );
-
-        // Build messages
-        let messages = vec![
-            Message {
-                role: "system".to_string(),
-                content: Some(config_system_prompt()),
-                tool_calls: None,
-                tool_call_id: None,
-            },
-            Message {
-                role: "user".to_string(),
-                content: Some(user_message),
-                tool_calls: None,
-                tool_call_id: None,
-            },
-        ];
-
-        // Make streaming request
-        let mut stream = llm_client
-            .chat_completion_stream(messages, None, Some(4096))
+        let agent = Agent::new(config)
             .await
-            .map_err(|e| format!("{}", e))?;
+            .map_err(|e| format!("Failed to create agent: {}", e))?;
 
-        let mut full_response = String::new();
+        // Create a new session
+        let mut session = Session::new("gui_session".to_string());
 
-        while let Some(result) = stream.next().await {
-            if cancel_flag.load(Ordering::SeqCst) {
-                break;
-            }
-            match result {
-                Ok(response) => {
-                    for choice in response.choices {
-                        if let Some(content) = choice.delta.content {
-                            full_response.push_str(&content);
-                        }
-                    }
-                }
-                Err(e) => {
-                    let msg = format!("{}", e);
-                    if msg.contains("Stream finished") {
-                        break;
-                    }
-                }
-            }
+        // Process message with full agent capabilities (tools, MCP, etc.)
+        let result = agent.process_message(&mut session, &user_message).await;
+
+        // Check if cancelled during processing
+        if cancel_flag.load(Ordering::SeqCst) {
+            return Ok("[Stopped]".to_string());
         }
 
-        Ok(full_response)
+        match result {
+            Ok(response) => Ok(response),
+            Err(e) => Err(format!("Agent error: {}", e)),
+        }
     }
 }
-
-fn config_system_prompt() -> String {
-    "你是 GearClaw 🦞，一个智能 AI 助手。请用友好、简洁的方式与用户交流。".to_string()
-}
-
 impl Focusable for DesktopApp {
     fn focus_handle(&self, _: &App) -> FocusHandle {
         self.focus_handle.clone()
@@ -333,6 +331,7 @@ impl Render for DesktopApp {
                 .flex()
                 .flex_col()
                 .flex_grow()
+                .min_h(px(0.0))
                 .bg(theme::bg(cx))
                 .child(self.render_chat(cx))
                 .child(self.render_input_bar(cx)),
@@ -340,6 +339,7 @@ impl Render for DesktopApp {
                 .flex()
                 .flex_col()
                 .flex_grow()
+                .min_h(px(0.0))
                 .bg(theme::bg(cx))
                 .child(self.render_settings(cx)),
         };
@@ -364,9 +364,7 @@ impl Render for DesktopApp {
                     .child(self.render_sidebar(cx))
                     .child(main_content),
             )
-            .when(show_logs, |el: Div| {
-                el.child(self.render_log_panel(cx))
-            })
+            .when(show_logs, |el: Div| el.child(self.render_log_panel(cx)))
             .child(self.render_status_bar(cx))
     }
 }

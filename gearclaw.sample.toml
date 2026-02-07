@@ -5,13 +5,14 @@ llm:
   - anthropic/claude-3-opus
   endpoint: https://api.openai.com/v1
   api_key: null
+  embedding_model: embedding-3
 tools:
   security: full
   host: gateway
   elevated_enabled: true
   profile: full
 session:
-  session_dir: /Users/huchen/.openclaw/sessions
+  session_dir: /Users/huchen/.gearclaw/sessions
   save_interval: 60
   max_tokens: 200000
 agent:
@@ -26,5 +27,11 @@ agent:
     - 提供编程帮助、调试、代码审查
 
     请用友好、简洁的方式与用户交流。如果有不确定的地方，询问用户。
-  workspace: /Users/huchen/.openclaw/workspace
+  workspace: /Users/huchen/.gearclaw/workspace
   memory_enabled: true
+  skills_path: /Users/huchen/.gearclaw/skills
+memory:
+  enabled: true
+  db_path: /Users/huchen/.gearclaw/memory/index.sqlite
+mcp:
+  servers: {}
