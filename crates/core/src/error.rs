@@ -26,6 +26,9 @@ pub enum GearClawError {
 
     // Database errors
     DatabaseError(rusqlite::Error),
+
+    // Generic errors
+    Other(String),
 }
 
 impl fmt::Display for GearClawError {
@@ -63,6 +66,9 @@ impl fmt::Display for GearClawError {
             }
             GearClawError::DatabaseError(err) => {
                 write!(f, "数据库错误: {}", err)
+            }
+            GearClawError::Other(msg) => {
+                write!(f, "错误: {}", msg)
             }
         }
     }

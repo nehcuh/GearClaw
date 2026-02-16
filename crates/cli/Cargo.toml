@@ -5,7 +5,10 @@ edition = "2024"
 
 [dependencies]
 gearclaw_core = { path = "../core" }
+gearclaw_gateway = { path = "../gateway" }
+gearclaw_channels = { path = "../channels" }
 tokio = { version = "1.49", features = ["full"] }
+futures-util = "0.3"
 anyhow = "1.0"
 clap = { version = "4.5", features = ["derive"] }
 tracing = "0.1"

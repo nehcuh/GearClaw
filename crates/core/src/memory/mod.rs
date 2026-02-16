@@ -9,6 +9,7 @@ use sha2::{Sha256, Digest};
 use std::fs;
 use glob::glob;
 
+#[derive(Clone)]
 pub struct MemoryManager {
     config: MemoryConfig,
     conn: Arc<Mutex<Connection>>,

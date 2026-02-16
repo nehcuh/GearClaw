@@ -7,6 +7,8 @@ use crate::session::{Session, SessionManager};
 use crate::skills::SkillManager;
 use crate::tools::{ToolExecutor, ToolResult};
 use futures::StreamExt;
+use rustyline::Editor;
+use rustyline::history::DefaultHistory;
 use serde_json::{Value, json};
 use std::collections::HashMap;
 use std::io::Write;
@@ -78,7 +80,7 @@ impl Agent {
             llm_client.clone(),
         )?;
 
-        Ok(Agent {
+        let agent = Agent {
             config,
             llm_client,
             tool_executor,
@@ -86,53 +88,78 @@ impl Agent {
             skill_manager,
             memory_manager,
             mcp_manager,
-        })
+        };
+
+        // Auto-sync memory if enabled
+        if agent.config.memory.enabled {
+            info!("Memory is enabled, starting initial sync...");
+            let memory_manager_for_sync = agent.memory_manager.clone();
+            tokio::spawn(async move {
+                if let Err(e) = memory_manager_for_sync.sync().await {
+                    tracing::warn!("Initial memory sync failed: {}", e);
+                }
+            });
+        }
+
+        Ok(agent)
     }
 
     pub async fn start_interactive(&self) -> Result<(), GearClawError> {
         let mut session = self.session_manager.get_or_create_session("interactive")?;
+        let mut rl = Editor::<(), DefaultHistory>::new()
+            .map_err(|e| GearClawError::IoError(std::io::Error::new(std::io::ErrorKind::Other, e)))?;
 
         println!("⚙️ GearClaw 交互模式已启动");
         println!("输入 'exit' 或 'quit' 退出");
         println!("输入 'clear' 清除对话历史");
         println!("输入 'help' 查看可用命令");
+        println!("提示: 使用 ↑/↓ 浏览历史，左/右移动光标，Backspace/Delete 删除字符");
         println!();
 
         loop {
-            print!("> ");
-            std::io::stdout().flush().ok();
+            let readline = rl.readline("> ");
 
-            let mut input = String::new();
-            std::io::stdin()
-                .read_line(&mut input)
-                .map_err(|e| GearClawError::IoError(e))?;
+            match readline {
+                Ok(line) => {
+                    let input = line.trim();
 
-            let input = input.trim();
+                    if input.is_empty() {
+                        continue;
+                    }
 
-            if input.is_empty() {
-                continue;
-            }
+                    // 添加到历史记录（排除特殊命令）
+                    if !matches!(input, "exit" | "quit" | "clear" | "help") {
+                        let _ = rl.add_history_entry(input);
+                    }
 
-            match input {
-                "exit" | "quit" => {
-                    info!("退出交互模式");
+                    match input {
+                        "exit" | "quit" => {
+                            info!("退出交互模式");
+                            break;
+                        }
+                        "clear" => {
+                            session.clear_history();
+                            println!("✓ 对话历史已清除");
+                            let _ = rl.clear_history();
+                            continue;
+                        }
+                        "help" => {
+                            self.print_help();
+                            continue;
+                        }
+                        _ => {
+                            println!("🤖 GearClaw: ");
+                            std::io::stdout().flush().ok();
+
+                            let _ = self.process_message(&mut session, input).await?;
+                            println!();
+                        }
+                    }
+                }
+                Err(_) => {
+                    // Ctrl+D 或 Ctrl+C
+                    println!("\n👋 再见！");
                     break;
-                }
-                "clear" => {
-                    session.clear_history();
-                    println!("✓ 对话历史已清除");
-                    continue;
-                }
-                "help" => {
-                    self.print_help();
-                    continue;
-                }
-                _ => {
-                    println!("🤖 GearClaw: ");
-                    std::io::stdout().flush().ok();
-
-                    let _ = self.process_message(&mut session, input).await?;
-                    println!();
                 }
             }
         }
@@ -171,11 +198,34 @@ impl Agent {
             // Construct messages with system prompt and skills context
             let mut messages = Vec::new();
 
-            let system_prompt = format!(
-                "{}{}",
-                self.config.agent.system_prompt,
-                self.skill_manager.get_prompt_context()
-            );
+            // Build system prompt with memory context if enabled
+            let mut system_prompt = self.config.agent.system_prompt.clone();
+            system_prompt.push_str(&self.skill_manager.get_prompt_context());
+
+            // Search memory if enabled and add to system prompt
+            if self.config.agent.memory_enabled && !user_message.is_empty() {
+                match self.memory_manager.search(user_message, 3).await {
+                    Ok(memories) if !memories.is_empty() => {
+                        tracing::debug!("Found {} relevant memories", memories.len());
+                        let memory_context = memories.iter()
+                            .map(|m| format!("- [{}] {} (score: {:.2})", m.path, m.text, m.score))
+                            .collect::<Vec<_>>()
+                            .join("\n");
+
+                        system_prompt.push_str("\n\n=== Relevant Context ===\n");
+                        system_prompt.push_str("The following information from your memory may be relevant to this conversation:\n\n");
+                        system_prompt.push_str(&memory_context);
+                        system_prompt.push_str("\n========================\n");
+                    }
+                    Ok(_) => {
+                        tracing::debug!("No relevant memories found");
+                    }
+                    Err(e) => {
+                        tracing::warn!("Memory search failed: {}", e);
+                        // Continue without memory context rather than failing
+                    }
+                }
+            }
 
             messages.push(Message {
                 role: "system".to_string(),
@@ -599,7 +649,20 @@ impl Agent {
                     .exec_command("docker", vec!["ps".to_string()], Some(&session.cwd))
                     .await
             }
-            _ => Err(GearClawError::ToolNotFound(tool_name.to_string())),
+            _ => {
+                // Check if it's a macOS-specific tool
+                #[cfg(target_os = "macos")]
+                if tool_name.starts_with("macos_") {
+                    let output = self.tool_executor.macos.execute_tool(tool_name, &args).await?;
+                    return Ok(ToolResult {
+                        success: true,
+                        output,
+                        error: None,
+                    });
+                }
+
+                Err(GearClawError::ToolNotFound(tool_name.to_string()))
+            }
         }
     }
 
@@ -637,13 +700,97 @@ impl Agent {
         for tool in self.tool_executor.available_tools() {
             println!("  • {} - {}", tool.name, tool.description);
         }
+    }
 
-        println!();
-        println!("💡 使用方法:");
-        println!("  直接输入问题，GearClaw 会自动调用适当的工具");
-        println!("  例如: '列出当前目录的文件'");
-        println!("  例如: '查看 git 状态'");
-        println!("  例如: '帮我写一个 Rust Hello World 程序'");
+    /// Process a message from a channel (Discord, Telegram, etc.)
+    ///
+    /// Parameters:
+    /// - platform: Platform name (e.g., "discord", "telegram")
+    /// - source_id: User or channel ID from the platform
+    /// - content: Message content
+    pub async fn process_channel_message(
+        &self,
+        platform: &str,
+        source_id: &str,
+        content: &str,
+    ) -> Result<String, GearClawError> {
+        // Create session ID from platform and source
+        let session_id = format!("{}:{}", platform, source_id);
+
+        // Get or create session
+        let mut session = self.session_manager.get_or_create_session(&session_id)?;
+
+        // Add user message to session
+        session.add_message(Message {
+            role: "user".to_string(),
+            content: Some(content.to_string()),
+            tool_calls: None,
+            tool_call_id: None,
+        });
+
+        // Check if agent should respond
+        let should_respond = self.should_respond_to_message(platform, source_id, content)?;
+
+        if !should_respond {
+            tracing::debug!("Agent not triggered for message: {}", content);
+            return Ok(String::new());
+        }
+
+        // Process message and get response
+        let response = self.process_message(&mut session, content).await?;
+
+        // Save session
+        self.session_manager.save_session(&session).await?;
+
+        Ok(response)
+    }
+
+    /// Check if agent should respond to a message based on trigger mode
+    fn should_respond_to_message(
+        &self,
+        platform: &str,
+        source_id: &str,
+        content: &str,
+    ) -> Result<bool, GearClawError> {
+        let trigger_config = &self.config.agent.triggers;
+
+        // Check channel whitelist/blacklist
+        let channel_key = format!("{}:{}", platform, source_id);
+
+        // Check disabled channels (blacklist)
+        if trigger_config.disabled_channels.contains(&channel_key) {
+            return Ok(false);
+        }
+
+        // Check enabled channels (whitelist)
+        if !trigger_config.enabled_channels.is_empty() {
+            if !trigger_config.enabled_channels.contains(&channel_key) {
+                return Ok(false);
+            }
+        }
+
+        // Check trigger mode
+        match trigger_config.mode {
+            crate::config::TriggerMode::Always => Ok(true),
+            crate::config::TriggerMode::Mention => {
+                // Check if message starts with mention pattern
+                for pattern in &trigger_config.mention_patterns {
+                    if content.starts_with(pattern) || content.contains(pattern) {
+                        return Ok(true);
+                    }
+                }
+                Ok(false)
+            }
+            crate::config::TriggerMode::Keyword => {
+                // Check if message contains any keyword
+                for keyword in &trigger_config.keywords {
+                    if content.to_lowercase().contains(&keyword.to_lowercase()) {
+                        return Ok(true);
+                    }
+                }
+                Ok(false)
+            }
+        }
     }
 }
 

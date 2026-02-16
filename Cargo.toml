@@ -8,4 +8,6 @@ members = [
     "crates/core",
     "crates/cli",
     "crates/gui",
+    "crates/gateway",
+    "crates/channels",
 ]

@@ -54,6 +54,21 @@ pub enum Commands {
 
     /// Test MCP integration
     TestMcp,
+
+    /// Start Gateway server
+    Gateway {
+        /// Gateway host
+        #[arg(long, default_value = "127.0.0.1")]
+        host: Option<String>,
+
+        /// Gateway port
+        #[arg(short, long, default_value = "18789")]
+        port: Option<u16>,
+
+        /// Development mode (verbose logging)
+        #[arg(short, long)]
+        dev: bool,
+    },
 }
 
 #[derive(Subcommand, Debug)]

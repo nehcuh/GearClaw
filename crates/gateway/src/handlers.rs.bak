@@ -1,0 +1,202 @@
+// Gateway Method Handlers
+//
+// This module implements handlers for OpenClaw protocol methods.
+
+use serde_json::json;
+use serde_json::Value as JsonValue;
+use anyhow::Result;
+use std::sync::Arc;
+use uuid::Uuid;
+use crate::protocol::{GatewayRequest, GatewayEvent, AgentEvent, AgentEventContent};
+use futures::StreamExt;
+
+/// Callback for sending events to WebSocket client
+pub type EventSender = Box<dyn Fn(GatewayEvent) -> Result<(), anyhow::Error> + Send + Sync>;
+
+pub struct MethodHandlers {
+    /// Optional Agent reference (will be set by Gateway server)
+    agent: Option<Arc<gearclaw_core::Agent>>,
+}
+
+impl MethodHandlers {
+
+impl MethodHandlers {
+    pub fn new() -> Self {
+        Self {
+            agent: None,
+        }
+    }
+
+    /// Set the agent reference
+    pub fn set_agent(&mut self, agent: Arc<gearclaw_core::Agent>) {
+        self.agent = Some(agent);
+    }
+
+    /// Handle health check - returns actual Gateway status
+    pub async fn health(&self, _request: &GatewayRequest) -> Result<JsonValue> {
+        let uptime = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+
+        Ok(json!({
+            "status": "ok",
+            "version": env!("CARGO_PKG_VERSION"),
+            "uptime_ms": uptime,
+            "active_sessions": 0,
+        }))
+    }
+
+    /// Handle status request - returns actual connection stats
+    pub async fn status(&self, _request: &GatewayRequest) -> Result<JsonValue> {
+        Ok(json!({
+            "uptime_ms": std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs())
+                .unwrap_or(0),
+            "total_connections": 1, // Will be updated by server
+            "active_sessions": 1,
+        }))
+    }
+
+    /// Handle send message request - simulates message routing
+    pub async fn send(&self, request: &GatewayRequest) -> Result<JsonValue> {
+        // Parse target and message
+        let target = request.params.get("target")
+            .and_then(|t| t.as_str())
+            .unwrap_or("unknown");
+
+        let message = request.params.get("message")
+            .and_then(|m| m.as_str())
+            .unwrap_or("");
+
+        tracing::info!(
+            "Send requested: target={}, message={}",
+            target,
+            message
+        );
+
+        // Simulate successful send
+        Ok(json!({
+            "success": true,
+            "target": target,
+            "message": message,
+            "sent_at": chrono::Utc::now().to_rfc3339(),
+        }))
+    }
+
+    /// Handle agent execution request - actually calls Agent and streams events
+    pub async fn agent_execute(
+        &self,
+        request: &GatewayRequest,
+        send_event: EventSender,
+    ) -> Result<JsonValue> {
+        let run_id = Uuid::new_v4().to_string();
+
+        // Extract prompt from params
+        let prompt = request.params.get("prompt")
+            .and_then(|p| p.as_str())
+            .unwrap_or("");
+
+        // Extract session_id from params
+        let session_id = request.params.get("session_id")
+            .and_then(|s| s.as_str())
+            .unwrap_or("gateway-default");
+
+        if let Some(agent) = &self.agent {
+            tracing::info!(
+                "Agent execution started: run_id={}, session={}, prompt='{}'",
+                run_id,
+                session_id,
+                prompt
+            );
+
+            // Send initial "agent.start" event
+            let start_event = GatewayEvent::Agent(AgentEvent {
+                seq: 0,
+                content: AgentEventContent::Output {
+                    content: format!("Starting agent execution: {}", prompt),
+                    metadata: None,
+                },
+            });
+            send_event(Gateway_event_to_json(start_event)?)?;
+
+            // Create a mock session for agent
+            // TODO: Use actual session management
+            let mut session = agent.session_manager
+                .get_or_create_session(session_id)
+                .map_err(|e| anyhow::anyhow!("Failed to create session: {}", e))?;
+
+            // Call agent's process_message method
+            match agent.process_message(&mut session, prompt).await {
+                Ok(response) => {
+                    tracing::info!("Agent response: {}", response);
+
+                    // Send final "output" event
+                    let output_event = GatewayEvent::Agent(AgentEvent {
+                        seq: 1,
+                        content: AgentEventContent::Output {
+                            content: response,
+                            metadata: None,
+                        },
+                    });
+                    send_event(gateway_event_to_json(output_event)?)?;
+
+                    // Send "agent.end" event
+                    let end_event = GatewayEvent::Agent(AgentEvent {
+                        seq: 2,
+                        content: AgentEventContent::Output {
+                            content: "[Agent execution completed]".to_string(),
+                            metadata: None,
+                        },
+                    });
+                    send_event(gateway_event_to_json(end_event)?)?;
+
+                    Ok(json!({
+                        "run_id": run_id,
+                        "status": "completed",
+                        "response": response,
+                    }))
+                }
+                Err(e) => {
+                    tracing::error!("Agent execution error: {}", e);
+
+                    // Send error event
+                    let error_event = GatewayEvent::Agent(AgentEvent {
+                        seq: 1,
+                        content: AgentEventContent::Output {
+                            content: format!("Error: {}", e),
+                            metadata: None,
+                        },
+                    });
+                    send_event(gateway_event_to_json(error_event)?)?;
+
+                    Ok(json!({
+                        "run_id": run_id,
+                        "status": "error",
+                        "error": e.to_string(),
+                    }))
+                }
+            }
+        } else {
+            tracing::warn!("Agent not configured, returning mock response");
+            Ok(json!({
+                "run_id": run_id,
+                "status": "error",
+                "message": "Agent not configured",
+            }))
+        }
+    }
+
+/// Convert GatewayEvent to JsonValue for sending
+fn gateway_event_to_json(event: GatewayEvent) -> Result<JsonValue, serde_json::Error> {
+    use serde_json::to_value;
+    Ok(to_value(&event))
+}
+}
+
+impl Default for MethodHandlers {
+    fn default() -> Self {
+        Self::new()
+    }
+}

@@ -46,8 +46,8 @@ async fn main() -> Result<(), GearClawError> {
     // Load configuration
     let config = Config::load(&cli.config_path)?;
 
-    // Create agent
-    let agent = Agent::new(config).await?;
+    // Create agent (clone config for agent use)
+    let agent = Agent::new(config.clone()).await?;
 
     // Handle different commands
     match cli.command {
@@ -168,6 +168,10 @@ async fn main() -> Result<(), GearClawError> {
             
             println!("\n✨ Verification Complete.");
         }
+        Some(Commands::Gateway { host, port, dev }) => {
+            // Start Gateway server
+            handle_gateway(&config, host, port, dev).await?;
+        }
         None => {
             // Default to interactive mode
             agent.start_interactive().await?;
@@ -283,6 +287,186 @@ echo "Hello from GearClaw Skill!"
     println!("✅ 配置文件已保存: {:?}", config_path);
     
     println!("\n🎉 初始化完成! 你现在可以运行 `gearclaw` 开始使用了。");
+
+    Ok(())
+}
+
+async fn handle_gateway(
+    config: &Config,
+    host: Option<String>,
+    port: Option<u16>,
+    dev: bool,
+) -> Result<(), GearClawError> {
+    use gearclaw_channels::{ChannelAdapter, DiscordAdapter};
+    use gearclaw_channels::platforms::discord::DiscordConfig;
+    use gearclaw_gateway::{GatewayServer, MethodHandlers};
+    use std::sync::Arc;
+
+    // Use CLI args or config file values
+    let gw_host = host.unwrap_or_else(|| config.gateway.host.clone());
+    let gw_port = port.unwrap_or(config.gateway.port);
+
+    // Configure logging
+    if dev {
+        let env_filter = EnvFilter::new("gearclaw=debug,gearclaw_gateway=debug,gearclaw_channels=debug");
+        tracing_subscriber::registry()
+            .with(env_filter)
+            .try_init()
+            .ok();
+    }
+
+    println!("🦾 GearClaw Gateway 启动中...");
+    println!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+    println!("  主机: {}", gw_host);
+    println!("  端口: {}", gw_port);
+    println!("  模式: {}", if dev { "开发" } else { "生产" });
+    println!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+    println!();
+
+    // Check for Discord token
+    let discord_token = std::env::var("DISCORD_BOT_TOKEN");
+    let agent_for_discord = if discord_token.is_ok() {
+        Some(Arc::new(Agent::new(config.clone()).await?))
+    } else {
+        None
+    };
+
+    if let Some(token) = discord_token.ok() {
+        println!("📱 Discord Bot Token 已设置");
+        println!("   正在初始化 Discord 适配器...");
+        println!();
+
+        // Create and start Discord adapter
+        let discord_config = DiscordConfig {
+            bot_token: token.clone(),
+            message_limit: 2000,
+        };
+
+        let mut discord = DiscordAdapter::new(discord_config);
+
+        // Clone agent for Discord message handling
+        let agent_clone = agent_for_discord.clone().unwrap();
+
+        // Start Discord adapter in background
+        let _discord_handle = tokio::spawn(async move {
+            if let Err(e) = discord.start().await {
+                tracing::error!("Discord adapter failed to start: {}", e);
+                return Err(e);
+            }
+
+            // Listen for Discord messages
+            use futures_util::StreamExt;
+            let mut message_stream = discord.on_message();
+
+            tracing::info!("Discord message listener started");
+
+            while let Some(incoming_msg) = message_stream.next().await {
+                // Get source name and ID from MessageSource
+                let (source_name, source_id) = match &incoming_msg.source {
+                    gearclaw_channels::MessageSource::User { id, name } => {
+                        (name.clone(), id.clone())
+                    }
+                    gearclaw_channels::MessageSource::Channel { id, name } => {
+                        (name.clone(), id.clone())
+                    }
+                    gearclaw_channels::MessageSource::Group { id, name } => {
+                        (name.clone(), id.clone())
+                    }
+                };
+
+                tracing::info!(
+                    "Received Discord message from {}: {}",
+                    source_name,
+                    incoming_msg.content
+                );
+
+                // Process message with agent
+                tracing::info!("🤖 Calling Agent.process_channel_message()...");
+
+                match agent_clone.process_channel_message(
+                    &incoming_msg.platform,
+                    &source_id,
+                    &incoming_msg.content,
+                ).await {
+                    Ok(response) => {
+                        tracing::info!("✅ Agent.process_channel_message() returned, response length: {}", response.len());
+
+                        if response.is_empty() {
+                            tracing::debug!("Agent chose not to respond (trigger not met)");
+                        } else {
+                            tracing::info!("Agent response: {}", response);
+
+                            // Send response back to Discord
+                            use gearclaw_channels::{MessageTarget, MessageContent};
+
+                            let channel_id = match incoming_msg.metadata.get("channel_id")
+                                .and_then(|v| v.as_str()) {
+                                    Some(id) => id,
+                                    None => {
+                                        tracing::error!("Missing channel_id in message metadata");
+                                        continue;
+                                    }
+                                };
+
+                            let target = MessageTarget::Channel(channel_id.to_string());
+                            let content = MessageContent {
+                                text: Some(response.clone()),
+                                embeds: Vec::new(),
+                            };
+
+                            if let Err(e) = discord.send_message(target, content).await {
+                                tracing::error!("Failed to send response to Discord: {}", e);
+                            } else {
+                                tracing::info!("✅ Successfully sent response to Discord channel {}", channel_id);
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        tracing::error!("❌ Failed to process Discord message: {}", e);
+                        tracing::error!("Error type: {:?}", std::error::Error::source(&e));
+                    }
+                }
+            }
+
+            Ok::<(), gearclaw_channels::ChannelError>(())
+        });
+
+        println!("✅ Discord 适配器已启动");
+        println!("   消息监听器已启动");
+        println!();
+    } else {
+        println!("⚠️  DISCORD_BOT_TOKEN 未设置");
+        println!("   Discord 功能将被禁用");
+        println!("   设置: export DISCORD_BOT_TOKEN='your_token'");
+        println!();
+    }
+
+    // Create agent for WebSocket gateway
+    let agent = if let Some(discord_agent) = agent_for_discord {
+        discord_agent
+    } else {
+        Arc::new(Agent::new(config.clone()).await?)
+    };
+
+    // Create gateway config
+    let gw_config = gearclaw_gateway::GatewayConfig {
+        host: gw_host,
+        port: gw_port,
+        ws_path: config.gateway.ws_path.clone(),
+    };
+
+    // Create server with agent integration
+    let handlers = MethodHandlers::new();
+    handlers.set_agent(agent.clone()).await;
+
+    let server = GatewayServer::new(gw_config)
+        .with_handlers(Arc::new(handlers));
+
+    println!("🌐 Gateway 服务器启动中...");
+    println!();
+
+    server.start().await
+        .map_err(|e| GearClawError::Other(format!("Gateway error: {}", e)))?;
 
     Ok(())
 }

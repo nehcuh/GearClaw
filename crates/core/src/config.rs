@@ -25,6 +25,10 @@ pub struct Config {
     /// MCP configuration
     #[serde(default = "default_mcp_config")]
     pub mcp: McpConfig,
+
+    /// Gateway configuration
+    #[serde(default = "default_gateway_config")]
+    pub gateway: GatewayConfig,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -54,6 +58,72 @@ pub struct MemoryConfig {
     pub enabled: bool,
     #[serde(default = "default_memory_db_path")]
     pub db_path: PathBuf,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GatewayConfig {
+    /// Gateway host
+    #[serde(default = "default_gateway_host")]
+    pub host: String,
+
+    /// Gateway port
+    #[serde(default = "default_gateway_port")]
+    pub port: u16,
+
+    /// WebSocket path
+    #[serde(default = "default_gateway_path")]
+    pub ws_path: String,
+
+    /// Device key path
+    #[serde(default = "default_device_key_path")]
+    pub device_key_path: PathBuf,
+
+    /// Auto-start on boot
+    #[serde(default)]
+    pub auto_start: bool,
+
+    /// Enable TLS
+    #[serde(default)]
+    pub tls_enabled: bool,
+
+    /// TLS certificate path
+    #[serde(default)]
+    pub tls_cert_path: Option<PathBuf>,
+
+    /// TLS key path
+    #[serde(default)]
+    pub tls_key_path: Option<PathBuf>,
+}
+
+fn default_gateway_config() -> GatewayConfig {
+    GatewayConfig {
+        host: default_gateway_host(),
+        port: default_gateway_port(),
+        ws_path: default_gateway_path(),
+        device_key_path: default_device_key_path(),
+        auto_start: false,
+        tls_enabled: false,
+        tls_cert_path: None,
+        tls_key_path: None,
+    }
+}
+
+fn default_gateway_host() -> String {
+    "127.0.0.1".to_string()
+}
+
+fn default_gateway_port() -> u16 {
+    18789
+}
+
+fn default_gateway_path() -> String {
+    "/ws".to_string()
+}
+
+fn default_device_key_path() -> PathBuf {
+    dirs::home_dir()
+        .unwrap()
+        .join(".gearclaw/device.key")
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -135,6 +205,68 @@ pub struct AgentConfig {
     /// Skills directory
     #[serde(default = "default_skills_path")]
     pub skills_path: PathBuf,
+
+    /// Channel trigger configuration
+    #[serde(default)]
+    pub triggers: AgentTriggerConfig,
+}
+
+/// Agent trigger configuration for channel messages
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentTriggerConfig {
+    /// Trigger mode: always, mention, or keyword
+    #[serde(default = "default_trigger_mode")]
+    pub mode: TriggerMode,
+
+    /// Mention patterns (e.g., ["@agent", "@bot", "!ai"])
+    #[serde(default)]
+    pub mention_patterns: Vec<String>,
+
+    /// Keywords that trigger the agent (for keyword mode)
+    #[serde(default)]
+    pub keywords: Vec<String>,
+
+    /// Whitelist: only respond in these channels (format: "platform:channel_id")
+    #[serde(default)]
+    pub enabled_channels: Vec<String>,
+
+    /// Blacklist: never respond in these channels (format: "platform:channel_id")
+    #[serde(default)]
+    pub disabled_channels: Vec<String>,
+}
+
+/// Trigger mode for agent responses
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum TriggerMode {
+    /// Respond to all messages
+    Always,
+    /// Only respond when mentioned
+    Mention,
+    /// Only respond when keywords are matched
+    Keyword,
+}
+
+impl Default for TriggerMode {
+    fn default() -> Self {
+        TriggerMode::Mention
+    }
+}
+
+impl Default for AgentTriggerConfig {
+    fn default() -> Self {
+        Self {
+            mode: TriggerMode::Mention,
+            mention_patterns: vec!["@agent".to_string(), "@bot".to_string()],
+            keywords: vec![],
+            enabled_channels: vec![],
+            disabled_channels: vec![],
+        }
+    }
+}
+
+fn default_trigger_mode() -> TriggerMode {
+    TriggerMode::Mention
 }
 
 fn default_skills_path() -> PathBuf {
@@ -267,9 +399,11 @@ impl Config {
                 workspace: dirs::home_dir().unwrap().join(".gearclaw/workspace"),
                 memory_enabled: true,
                 skills_path: default_skills_path(),
+                triggers: Default::default(),
             },
             memory: default_memory_config(),
             mcp: default_mcp_config(),
+            gateway: default_gateway_config(),
         }
     }
 }
