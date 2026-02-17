@@ -12,3 +12,4 @@ pub mod tools;
 // Re-export commonly used types
 pub use agent::Agent;
 pub use config::{Config, GatewayConfig, AgentConfig, AgentTriggerConfig, TriggerMode};
+pub use error::{GearClawError, DomainError, InfraError};

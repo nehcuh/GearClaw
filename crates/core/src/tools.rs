@@ -3,6 +3,8 @@ use serde_json::json;
 use tokio::process::Command;
 use tracing::{info, error, debug};
 use crate::error::GearClawError;
+
+#[cfg(target_os = "macos")]
 use crate::macos::MacosController;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -153,6 +155,7 @@ impl ToolExecutor {
     
     /// Get list of available tools
     pub fn available_tools(&self) -> Vec<ToolSpec> {
+        #[allow(unused_mut)]
         let mut tools = vec![
             ToolSpec {
                 name: "exec".to_string(),

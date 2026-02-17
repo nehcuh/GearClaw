@@ -446,9 +446,16 @@ mod tests {
         )
         .with_sequence(1);
 
-        let json = serde_json::to_string(&req).unwrap();
-        assert!(json.contains("\"type\":\"req\""));
-        assert!(json.contains("\"method\":\"health\""));
+        // Test GatewayRequest serialization (without frame wrapper)
+        let req_json = serde_json::to_string(&req).unwrap();
+        assert!(req_json.contains("\"method\":\"health\""));
+        assert!(req_json.contains("\"id\":\"test-1\""));
+
+        // Test GatewayFrame::Request serialization (with frame wrapper)
+        let frame = GatewayFrame::Request(req);
+        let frame_json = serde_json::to_string(&frame).unwrap();
+        assert!(frame_json.contains("\"type\":\"req\""));
+        assert!(frame_json.contains("\"method\":\"health\""));
     }
 
     #[test]
