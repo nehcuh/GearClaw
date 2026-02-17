@@ -229,7 +229,11 @@ impl MemoryManager {
         Ok(())
     }
 
-    pub async fn search(&self, query: &str, limit: usize) -> Result<Vec<SearchResult>, MemoryError> {
+    pub async fn search(
+        &self,
+        query: &str,
+        limit: usize,
+    ) -> Result<Vec<SearchResult>, MemoryError> {
         if !self.config.enabled {
             return Ok(Vec::new());
         }
@@ -241,19 +245,20 @@ impl MemoryManager {
 
         let chunks = {
             let conn = self.conn.lock().unwrap();
-            let mut stmt = conn.prepare("SELECT id, path, text, embedding, start_line FROM chunks")?;
+            let mut stmt =
+                conn.prepare("SELECT id, path, text, embedding, start_line FROM chunks")?;
             let rows = stmt
                 .query_map([], |row| {
-                let id: String = row.get(0)?;
-                let path: String = row.get(1)?;
-                let text: String = row.get(2)?;
-                let emb_json: String = row.get(3)?;
-                let start_line: Option<usize> = row.get(4)?;
-                let embedding: Vec<f32> = serde_json::from_str(&emb_json).unwrap_or_default();
-                Ok((id, path, text, embedding, start_line))
-            })?
-            .filter_map(Result::ok)
-            .collect::<Vec<_>>();
+                    let id: String = row.get(0)?;
+                    let path: String = row.get(1)?;
+                    let text: String = row.get(2)?;
+                    let emb_json: String = row.get(3)?;
+                    let start_line: Option<usize> = row.get(4)?;
+                    let embedding: Vec<f32> = serde_json::from_str(&emb_json).unwrap_or_default();
+                    Ok((id, path, text, embedding, start_line))
+                })?
+                .filter_map(Result::ok)
+                .collect::<Vec<_>>();
             rows
         };
 

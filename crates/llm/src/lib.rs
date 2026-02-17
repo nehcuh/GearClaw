@@ -212,20 +212,26 @@ impl LLMClient {
         if !response.status().is_success() {
             let status = response.status();
             let error_text = response.text().await.unwrap_or_default();
-            return Err(LlmError::Response(format!("API error {}: {}", status, error_text)));
+            return Err(LlmError::Response(format!(
+                "API error {}: {}",
+                status, error_text
+            )));
         }
 
-        let stream = response.bytes_stream().eventsource().map(|event| match event {
-            Ok(event) => {
-                if event.data == "[DONE]" {
-                    Err(LlmError::Response("Stream finished".to_string()))
-                } else {
-                    serde_json::from_str::<ChatCompletionStreamResponse>(&event.data)
-                        .map_err(LlmError::Json)
+        let stream = response
+            .bytes_stream()
+            .eventsource()
+            .map(|event| match event {
+                Ok(event) => {
+                    if event.data == "[DONE]" {
+                        Err(LlmError::Response("Stream finished".to_string()))
+                    } else {
+                        serde_json::from_str::<ChatCompletionStreamResponse>(&event.data)
+                            .map_err(LlmError::Json)
+                    }
                 }
-            }
-            Err(e) => Err(LlmError::Request(format!("stream error: {}", e))),
-        });
+                Err(e) => Err(LlmError::Request(format!("stream error: {}", e))),
+            });
 
         Ok(Box::pin(stream))
     }

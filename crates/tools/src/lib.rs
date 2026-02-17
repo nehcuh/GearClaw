@@ -147,7 +147,10 @@ impl ToolExecutor {
         let stderr = String::from_utf8_lossy(&output.stderr).to_string();
         if !output.status.success() {
             error!("命令执行失败: {} stderr: {}", cmd, stderr);
-            return Err(ToolError::Execution(format!("命令返回错误码: {}", output.status)));
+            return Err(ToolError::Execution(format!(
+                "命令返回错误码: {}",
+                output.status
+            )));
         }
         debug!("命令输出: {}", stdout);
         Ok(stdout)

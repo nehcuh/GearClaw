@@ -17,10 +17,12 @@ impl McpManager {
     }
 
     pub async fn init_clients(&self) -> Result<(), GearClawError> {
-        self.inner
-            .init_clients()
-            .await
-            .map_err(|e| GearClawError::Other(e.to_string()))
+        self.inner.init_clients().await.map_err(|e| {
+            GearClawError::from(crate::error::DomainError::Mcp {
+                server: "manager".to_string(),
+                reason: e.to_string(),
+            })
+        })
     }
 
     pub async fn list_tools(&self) -> Vec<CoreToolSpec> {
@@ -50,7 +52,12 @@ impl McpManager {
                 output: r.output,
                 error: r.error,
             })
-            .map_err(|e| GearClawError::Other(e.to_string()))
+            .map_err(|e| {
+                GearClawError::from(crate::error::DomainError::Mcp {
+                    server: name.split("__").next().unwrap_or("unknown").to_string(),
+                    reason: e.to_string(),
+                })
+            })
     }
 }
 

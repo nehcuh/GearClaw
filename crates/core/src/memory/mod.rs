@@ -23,15 +23,22 @@ impl MemoryManager {
             workspace_path,
             llm_client,
         )
-        .map_err(|e| GearClawError::Other(e.to_string()))?;
+        .map_err(|e| {
+            GearClawError::from(crate::error::DomainError::Memory {
+                operation: "initialize".to_string(),
+                reason: e.to_string(),
+            })
+        })?;
         Ok(Self { inner })
     }
 
     pub async fn sync(&self) -> Result<(), GearClawError> {
-        self.inner
-            .sync()
-            .await
-            .map_err(|e| GearClawError::Other(e.to_string()))
+        self.inner.sync().await.map_err(|e| {
+            GearClawError::from(crate::error::DomainError::Memory {
+                operation: "sync".to_string(),
+                reason: e.to_string(),
+            })
+        })
     }
 
     pub async fn search(
@@ -39,10 +46,12 @@ impl MemoryManager {
         query: &str,
         limit: usize,
     ) -> Result<Vec<SearchResult>, GearClawError> {
-        self.inner
-            .search(query, limit)
-            .await
-            .map_err(|e| GearClawError::Other(e.to_string()))
+        self.inner.search(query, limit).await.map_err(|e| {
+            GearClawError::from(crate::error::DomainError::Memory {
+                operation: format!("search(query='{}', limit={})", query, limit),
+                reason: e.to_string(),
+            })
+        })
     }
 }
 

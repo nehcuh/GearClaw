@@ -47,6 +47,7 @@ impl ToolExecutor {
         args: Vec<String>,
         cwd: Option<&std::path::Path>,
     ) -> Result<ToolResult, GearClawError> {
+        let args_for_err = args.clone();
         self.inner
             .exec_command(cmd, args, cwd)
             .await
@@ -55,7 +56,12 @@ impl ToolExecutor {
                 output: r.output,
                 error: r.error,
             })
-            .map_err(|e| GearClawError::tool_execution_error(e.to_string()))
+            .map_err(|e| {
+                GearClawError::from(crate::error::DomainError::ToolExecution {
+                    tool: cmd.to_string(),
+                    reason: format!("args={:?}, error={}", args_for_err, e),
+                })
+            })
     }
 
     pub fn available_tools(&self) -> Vec<ToolSpec> {
