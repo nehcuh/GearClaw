@@ -3,9 +3,9 @@
 // This example demonstrates how to start the Gateway server
 // with Discord channel adapter integration.
 
-use gearclaw_gateway::GatewayServer;
-use gearclaw_channels::{DiscordAdapter, ChannelAdapter};
 use anyhow::Result;
+use gearclaw_channels::{ChannelAdapter, DiscordAdapter};
+use gearclaw_gateway::GatewayServer;
 
 #[tokio::main]
 async fn main() -> Result<()> {

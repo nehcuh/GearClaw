@@ -76,7 +76,5 @@ pub enum MemoryCommands {
     /// Sync memory index
     Sync,
     /// Search memory
-    Search {
-        query: String,
-    },
+    Search { query: String },
 }

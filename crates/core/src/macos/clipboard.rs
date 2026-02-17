@@ -14,9 +14,7 @@ impl ClipboardManager {
     pub async fn read(&self) -> Result<String, GearClawError> {
         let output = Command::new("pbpaste")
             .output()
-            .map_err(|e| GearClawError::ToolExecutionError(
-                format!("读取剪贴板失败: {}", e)
-            ))?;
+            .map_err(|e| GearClawError::ToolExecutionError(format!("读取剪贴板失败: {}", e)))?;
 
         let content = String::from_utf8_lossy(&output.stdout).to_string();
         Ok(content)
@@ -35,9 +33,7 @@ impl ClipboardManager {
                 }
                 child.wait_with_output()
             })
-            .map_err(|e| GearClawError::ToolExecutionError(
-                format!("写入剪贴板失败: {}", e)
-            ))?;
+            .map_err(|e| GearClawError::ToolExecutionError(format!("写入剪贴板失败: {}", e)))?;
 
         Ok("✓ 已复制到剪贴板".to_string())
     }
@@ -55,9 +51,7 @@ impl ClipboardManager {
                 }
                 child.wait_with_output()
             })
-            .map_err(|e| GearClawError::ToolExecutionError(
-                format!("清空剪贴板失败: {}", e)
-            ))?;
+            .map_err(|e| GearClawError::ToolExecutionError(format!("清空剪贴板失败: {}", e)))?;
 
         Ok("✓ 剪贴板已清空".to_string())
     }

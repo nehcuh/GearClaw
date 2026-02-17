@@ -1,0 +1,8 @@
+[package]
+name = "gearclaw_memory"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+async-trait = "0.1"
+gearclaw_core = { path = "../core" }

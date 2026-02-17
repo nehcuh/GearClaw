@@ -1,8 +1,8 @@
+use crate::error::GearClawError;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tokio::process::Command;
-use tracing::{info, error, debug};
-use crate::error::GearClawError;
+use tracing::{debug, error, info};
 
 #[cfg(target_os = "macos")]
 use crate::macos::MacosController;
@@ -54,61 +54,97 @@ impl ToolExecutor {
             macos,
         }
     }
-    
+
     /// Execute a shell command
-    pub async fn exec_command(&self, cmd: &str, args: Vec<String>, cwd: Option<&std::path::Path>) -> Result<ToolResult, GearClawError> {
+    pub async fn exec_command(
+        &self,
+        cmd: &str,
+        args: Vec<String>,
+        cwd: Option<&std::path::Path>,
+    ) -> Result<ToolResult, GearClawError> {
         if self.security_level == SecurityLevel::Deny {
             return Err(GearClawError::ToolExecutionError(
-                "工具执行被禁止 (security=deny)".to_string()
+                "工具执行被禁止 (security=deny)".to_string(),
             ));
         }
-        
+
         info!("执行命令: {} {:?} (cwd: {:?})", cmd, args, cwd);
-        
+
         let output = if self.security_level == SecurityLevel::Allowlist {
             // In allowlist mode, only allow safe commands
             if !self.is_safe_command(cmd) {
-                return Err(GearClawError::ToolExecutionError(
-                    format!("命令不在允许列表中: {}", cmd)
-                ));
+                return Err(GearClawError::ToolExecutionError(format!(
+                    "命令不在允许列表中: {}",
+                    cmd
+                )));
             }
             self.execute_safe_command(cmd, args, cwd).await?
         } else {
             // Full mode - execute any command
             self.execute_any_command(cmd, args, cwd).await?
         };
-        
+
         Ok(ToolResult {
             success: true,
             output,
             error: None,
         })
     }
-    
+
     fn is_safe_command(&self, cmd: &str) -> bool {
         const SAFE_COMMANDS: &[&str] = &[
-            "ls", "cat", "grep", "head", "tail", "find",
-            "git", "npm", "node", "cargo", "rustc",
-            "go", "java", "python", "python3", "pip",
-            "docker", "docker-compose", "kubectl",
-            "curl", "wget", "mkdir", "cp", "mv", "echo",
+            "ls",
+            "cat",
+            "grep",
+            "head",
+            "tail",
+            "find",
+            "git",
+            "npm",
+            "node",
+            "cargo",
+            "rustc",
+            "go",
+            "java",
+            "python",
+            "python3",
+            "pip",
+            "docker",
+            "docker-compose",
+            "kubectl",
+            "curl",
+            "wget",
+            "mkdir",
+            "cp",
+            "mv",
+            "echo",
         ];
-        
+
         SAFE_COMMANDS.contains(&cmd)
     }
-    
-    async fn execute_safe_command(&self, cmd: &str, args: Vec<String>, cwd: Option<&std::path::Path>) -> Result<String, GearClawError> {
+
+    async fn execute_safe_command(
+        &self,
+        cmd: &str,
+        args: Vec<String>,
+        cwd: Option<&std::path::Path>,
+    ) -> Result<String, GearClawError> {
         self.execute_any_command(cmd, args, cwd).await
     }
-    
-    async fn execute_any_command(&self, cmd: &str, args: Vec<String>, cwd: Option<&std::path::Path>) -> Result<String, GearClawError> {
+
+    async fn execute_any_command(
+        &self,
+        cmd: &str,
+        args: Vec<String>,
+        cwd: Option<&std::path::Path>,
+    ) -> Result<String, GearClawError> {
         let mut command;
-        
+
         // Use shell execution to support complex commands and simple strings
         if cfg!(target_os = "windows") {
             command = Command::new("cmd");
             command.arg("/C");
-            
+
             // Reconstruct command line
             let mut full_cmd = cmd.to_string();
             for arg in args {
@@ -119,7 +155,7 @@ impl ToolExecutor {
         } else {
             command = Command::new("sh");
             command.arg("-c");
-            
+
             // Reconstruct command line
             let mut full_cmd = cmd.to_string();
             for arg in args {
@@ -133,26 +169,27 @@ impl ToolExecutor {
         if let Some(dir) = cwd {
             command.current_dir(dir);
         }
-        
+
         let output = command
             .output()
             .await
             .map_err(|e| GearClawError::ToolExecutionError(format!("执行失败: {}", e)))?;
-        
+
         let stdout = String::from_utf8_lossy(&output.stdout).to_string();
         let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-        
+
         if !output.status.success() {
             error!("命令执行失败: {} stderr: {}", cmd, stderr);
-            return Err(GearClawError::ToolExecutionError(
-                format!("命令返回错误码: {}", output.status)
-            ));
+            return Err(GearClawError::ToolExecutionError(format!(
+                "命令返回错误码: {}",
+                output.status
+            )));
         }
-        
+
         debug!("命令输出: {}", stdout);
         Ok(stdout)
     }
-    
+
     /// Get list of available tools
     pub fn available_tools(&self) -> Vec<ToolSpec> {
         #[allow(unused_mut)]

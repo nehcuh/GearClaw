@@ -1,11 +1,11 @@
-use anyhow::{Context, Result};
-use std::sync::Arc;
-use tokio::sync::{RwLock, broadcast};
-use tokio_tungstenite::tungstenite::Message;
-use futures_util::{stream::StreamExt, sink::SinkExt};
-use crate::protocol::*;
-use crate::handlers::MethodHandlers;
 use crate::auth::TokenAuth;
+use crate::handlers::MethodHandlers;
+use crate::protocol::*;
+use anyhow::{Context, Result};
+use futures_util::{sink::SinkExt, stream::StreamExt};
+use std::sync::Arc;
+use tokio::sync::{broadcast, RwLock};
+use tokio_tungstenite::tungstenite::Message;
 
 /// Gateway configuration
 #[derive(Debug, Clone)]
@@ -112,7 +112,16 @@ impl GatewayServer {
                 let connections = self.connections.clone();
                 let event_rx = self.event_tx.subscribe();
                 tokio::spawn(async move {
-                    if let Err(e) = handle_connection(stream, addr.to_string(), handlers, auth, connections, event_rx).await {
+                    if let Err(e) = handle_connection(
+                        stream,
+                        addr.to_string(),
+                        handlers,
+                        auth,
+                        connections,
+                        event_rx,
+                    )
+                    .await
+                    {
                         tracing::error!("Connection error: {}", e);
                     }
                 });
@@ -134,7 +143,10 @@ impl GatewayServer {
             // Get list of registered platforms
             let platforms = {
                 let mgr = channel_manager.lock().await;
-                mgr.platforms().into_iter().map(|s| s.to_string()).collect::<Vec<_>>()
+                mgr.platforms()
+                    .into_iter()
+                    .map(|s| s.to_string())
+                    .collect::<Vec<_>>()
             };
 
             // Subscribe to messages from each platform
@@ -219,7 +231,9 @@ impl GatewayServer {
                                             &source_clone,
                                             &content_clone,
                                             channel_mgr,
-                                        ).await {
+                                        )
+                                        .await
+                                        {
                                             tracing::error!("Agent processing failed: {}", e);
                                         }
                                     });
@@ -258,10 +272,8 @@ async fn handle_connection(
 
     // Send hello-ok
     let hello_payload = serde_json::to_value(create_hello_ok()).unwrap();
-    let hello_response = GatewayFrame::Response(GatewayResponse::ok(
-        "hello".to_string(),
-        hello_payload,
-    ));
+    let hello_response =
+        GatewayFrame::Response(GatewayResponse::ok("hello".to_string(), hello_payload));
     let hello_msg = serde_json::to_string(&hello_response)?;
     ws_sender.send(Message::Text(hello_msg.into())).await?;
 
@@ -388,7 +400,8 @@ async fn process_agent_response(
     };
 
     // Get or create session
-    let mut session = agent.session_manager
+    let mut session = agent
+        .session_manager
         .get_or_create_session(&session_id)
         .map_err(|e| anyhow::anyhow!("Failed to get session: {}", e))?;
 
@@ -411,7 +424,10 @@ async fn process_agent_response(
         .map_err(|e| anyhow::anyhow!("Agent processing failed: {}", e))?;
 
     // Save session
-    agent.session_manager.save_session(&session).await
+    agent
+        .session_manager
+        .save_session(&session)
+        .await
         .map_err(|e| anyhow::anyhow!("Failed to save session: {}", e))?;
 
     // Extract the actual response (remove context prefix if present)
@@ -439,7 +455,9 @@ async fn process_agent_response(
             ChannelSource::Group { id, .. } => id.clone(),
         };
 
-        let target = adapter.resolve_target(&target_identifier).await
+        let target = adapter
+            .resolve_target(&target_identifier)
+            .await
             .map_err(|e| anyhow::anyhow!("Failed to resolve target: {}", e))?;
 
         let message_content = MessageContent {
@@ -447,7 +465,9 @@ async fn process_agent_response(
             embeds: vec![],
         };
 
-        adapter.send_message(target, message_content).await
+        adapter
+            .send_message(target, message_content)
+            .await
             .map_err(|e| anyhow::anyhow!("Failed to send agent response: {}", e))?;
 
         tracing::info!("Agent response sent to {}:{}", platform, target_identifier);
@@ -461,10 +481,7 @@ async fn process_agent_response(
 /// Create hello-ok payload
 fn create_hello_ok() -> HelloOkPayload {
     HelloOkPayload {
-        protocol: ProtocolVersion {
-            min: 1,
-            max: 1,
-        },
+        protocol: ProtocolVersion { min: 1, max: 1 },
         presence: vec![],
         health: serde_json::json!({
             "status": "ok",
@@ -476,9 +493,9 @@ fn create_hello_ok() -> HelloOkPayload {
         },
         uptime_ms: 0,
         policy: GatewayPolicy {
-            max_payload: 1024 * 1024, // 1MB
+            max_payload: 1024 * 1024,             // 1MB
             max_buffered_bytes: 10 * 1024 * 1024, // 10MB
-            tick_interval_ms: 30000, // 30 seconds
+            tick_interval_ms: 30000,              // 30 seconds
         },
     }
 }

@@ -1,6 +1,6 @@
 use std::collections::HashMap;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 
 use gpui::prelude::FluentBuilder;
 use gpui::*;
@@ -40,6 +40,7 @@ pub struct DesktopApp {
     pub scroll_handle: ScrollHandle,
     pub is_loading: bool,
     pub cancel_flag: Arc<AtomicBool>,
+    pub runtime: Arc<tokio::runtime::Runtime>,
     pub view_mode: ViewMode,
     pub window_title: String,
     pub show_logs: bool,
@@ -59,6 +60,10 @@ pub struct DesktopApp {
 impl DesktopApp {
     pub fn new(cx: &mut Context<Self>) -> Self {
         let input = cx.new(|cx| TextInput::new("Type a message...", cx));
+        let runtime = Arc::new(
+            tokio::runtime::Runtime::new()
+                .expect("Failed to initialize shared Tokio runtime for GUI"),
+        );
 
         // Load existing config to pre-fill settings, or use defaults
         let (endpoint, api_key, model, embedding) = match Config::load(&None) {
@@ -109,6 +114,7 @@ impl DesktopApp {
             scroll_handle: ScrollHandle::new(),
             is_loading: false,
             cancel_flag: Arc::new(AtomicBool::new(false)),
+            runtime,
             view_mode: if config_exists {
                 ViewMode::Chat
             } else {
@@ -199,13 +205,15 @@ impl DesktopApp {
 
         // Spawn background thread with its own Tokio runtime for network I/O
         let cancel_flag = self.cancel_flag.clone();
+        let runtime = self.runtime.clone();
         let task = cx.background_spawn({
             let cancel_flag = cancel_flag.clone();
+            let runtime = runtime.clone();
             async move {
-                // reqwest needs a Tokio runtime; GPUI uses its own executor
-                let rt = tokio::runtime::Runtime::new()
-                    .map_err(|e| format!("Failed to create runtime: {}", e))?;
-                rt.block_on(Self::run_agent(content, cancel_flag))
+                let join_handle = runtime.spawn(Self::run_agent(content, cancel_flag));
+                join_handle
+                    .await
+                    .map_err(|e| format!("Agent task join error: {}", e))?
             }
         });
 

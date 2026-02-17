@@ -2,13 +2,13 @@
 //
 // This module implements handlers for OpenClaw protocol methods.
 
+use crate::protocol::GatewayRequest;
+use anyhow::Result;
+use gearclaw_channels::adapter::{ChannelManager, MessageContent};
 use serde_json::json;
 use serde_json::Value as JsonValue;
-use anyhow::Result;
 use std::sync::Arc;
 use uuid::Uuid;
-use crate::protocol::GatewayRequest;
-use gearclaw_channels::adapter::{ChannelManager, MessageContent};
 
 pub struct MethodHandlers {
     /// Optional Agent reference (will be set by Gateway server)
@@ -24,7 +24,9 @@ impl MethodHandlers {
         Self {
             agent: Arc::new(tokio::sync::Mutex::new(None)),
             channel_manager: Arc::new(tokio::sync::Mutex::new(ChannelManager::new())),
-            trigger_config: Arc::new(tokio::sync::Mutex::new(gearclaw_core::AgentTriggerConfig::default())),
+            trigger_config: Arc::new(tokio::sync::Mutex::new(
+                gearclaw_core::AgentTriggerConfig::default(),
+            )),
         }
     }
 
@@ -87,19 +89,19 @@ impl MethodHandlers {
     /// Handle send message request
     pub async fn send(&self, request: &GatewayRequest) -> Result<JsonValue> {
         // Parse target parameter (format: "platform:identifier")
-        let target_str = request.params.get("target")
+        let target_str = request
+            .params
+            .get("target")
             .and_then(|t| t.as_str())
             .ok_or_else(|| anyhow::anyhow!("Missing 'target' parameter"))?;
 
-        let message = request.params.get("message")
+        let message = request
+            .params
+            .get("message")
             .and_then(|m| m.as_str())
             .ok_or_else(|| anyhow::anyhow!("Missing 'message' parameter"))?;
 
-        tracing::info!(
-            "Send requested: target={}, message={}",
-            target_str,
-            message
-        );
+        tracing::info!("Send requested: target={}, message={}", target_str, message);
 
         // Parse target format: "platform:identifier"
         let parts: Vec<&str> = target_str.splitn(2, ':').collect();
@@ -119,7 +121,9 @@ impl MethodHandlers {
 
         if let Some(adapter) = adapter {
             // Resolve target
-            let target = adapter.resolve_target(identifier).await
+            let target = adapter
+                .resolve_target(identifier)
+                .await
                 .map_err(|e| anyhow::anyhow!("Failed to resolve target: {}", e))?;
 
             // Create message content
@@ -129,7 +133,9 @@ impl MethodHandlers {
             };
 
             // Send message
-            adapter.send_message(target, content).await
+            adapter
+                .send_message(target, content)
+                .await
                 .map_err(|e| anyhow::anyhow!("Failed to send message: {}", e))?;
 
             tracing::info!("Message sent successfully to {}:{}", platform, identifier);
@@ -153,7 +159,9 @@ impl MethodHandlers {
         let run_id = Uuid::new_v4().to_string();
 
         // Extract prompt from params
-        let prompt = request.params.get("prompt")
+        let prompt = request
+            .params
+            .get("prompt")
             .and_then(|p| p.as_str())
             .unwrap_or("");
 
@@ -167,13 +175,11 @@ impl MethodHandlers {
         if let Some(agent) = self.get_agent().await {
             // Create or get session for this request
             // Use request ID or device ID as session identifier
-            let session_id = request.device_id
-                .as_ref()
-                .unwrap_or(&request.id)
-                .clone();
+            let session_id = request.device_id.as_ref().unwrap_or(&request.id).clone();
 
             // Get or create session
-            let mut sess = agent.session_manager
+            let mut sess = agent
+                .session_manager
                 .get_or_create_session(&session_id)
                 .map_err(|e| anyhow::anyhow!("Failed to get session: {}", e))?;
 
@@ -184,7 +190,10 @@ impl MethodHandlers {
                 .map_err(|e| anyhow::anyhow!("Agent execution failed: {}", e))?;
 
             // Save session
-            agent.session_manager.save_session(&sess).await
+            agent
+                .session_manager
+                .save_session(&sess)
+                .await
                 .map_err(|e| anyhow::anyhow!("Failed to save session: {}", e))?;
 
             Ok(json!({

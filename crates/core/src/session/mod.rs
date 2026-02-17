@@ -105,8 +105,10 @@ impl SessionManager {
     pub async fn save_session(&self, session: &Session) -> Result<(), GearClawError> {
         let path = self.config.session_dir.join(format!("{}.json", session.id));
         let content = serde_json::to_string_pretty(session)?;
-        
-        tokio::fs::write(path, content).await.map_err(GearClawError::IoError)?;
+
+        tokio::fs::write(path, content)
+            .await
+            .map_err(GearClawError::IoError)?;
         Ok(())
     }
 

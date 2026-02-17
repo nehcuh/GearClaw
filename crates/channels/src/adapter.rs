@@ -64,11 +64,16 @@ pub trait ChannelAdapter: Send + Sync {
     async fn start(&mut self) -> Result<(), ChannelError>;
 
     /// Send message to target
-    async fn send_message(&self, target: MessageTarget, content: MessageContent)
-        -> Result<(), ChannelError>;
+    async fn send_message(
+        &self,
+        target: MessageTarget,
+        content: MessageContent,
+    ) -> Result<(), ChannelError>;
 
     /// Subscribe to incoming messages
-    fn on_message(&self) -> Pin<Box<dyn futures_util::stream::Stream<Item = IncomingMessage> + Send>>;
+    fn on_message(
+        &self,
+    ) -> Pin<Box<dyn futures_util::stream::Stream<Item = IncomingMessage> + Send>>;
 
     /// Resolve identifier to target
     async fn resolve_target(&self, identifier: &str) -> Result<MessageTarget, ChannelError>;
@@ -80,15 +85,30 @@ pub trait ChannelAdapter: Send + Sync {
 /// Channel error type
 #[derive(Debug)]
 pub enum ChannelError {
-    ConnectionFailed { platform: String, source: String },
+    ConnectionFailed {
+        platform: String,
+        source: String,
+    },
 
-    SendFailed { target: MessageTarget, source: String },
+    SendFailed {
+        target: MessageTarget,
+        source: String,
+    },
 
-    ResolveFailed { identifier: String, source: String },
+    ResolveFailed {
+        identifier: String,
+        source: String,
+    },
 
-    HealthCheckFailed { platform: String, source: String },
+    HealthCheckFailed {
+        platform: String,
+        source: String,
+    },
 
-    AuthenticationFailed { platform: String, source: String },
+    AuthenticationFailed {
+        platform: String,
+        source: String,
+    },
 }
 
 impl std::fmt::Display for ChannelError {

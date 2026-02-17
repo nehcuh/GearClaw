@@ -6,7 +6,7 @@
 
 use crate::config::McpConfig;
 use crate::error::GearClawError;
-use crate::tools::{ToolSpec, ToolResult};
+use crate::tools::{ToolResult, ToolSpec};
 use tracing::warn;
 
 /// MCP Manager for handling Model Context Protocol servers
@@ -22,7 +22,7 @@ impl McpManager {
     }
 
     /// Initialize MCP clients
-    /// 
+    ///
     /// Note: This is a stub implementation. Full MCP support requires
     /// the rmcp crate which currently needs nightly Rust (edition 2024).
     pub async fn init_clients(&self) -> Result<(), GearClawError> {

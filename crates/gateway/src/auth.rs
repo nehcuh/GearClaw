@@ -47,7 +47,10 @@ impl TokenAuth {
         };
 
         // Check format (alphanumeric with some special chars)
-        if !token.chars().all(|c| c.is_alphanumeric() || c == '-' || c == '_' || c == '.') {
+        if !token
+            .chars()
+            .all(|c| c.is_alphanumeric() || c == '-' || c == '_' || c == '.')
+        {
             tracing::warn!("Token validation failed: invalid characters");
             return false;
         }
@@ -158,8 +161,14 @@ mod tests {
         .unwrap();
 
         // Validate it
-        assert!(auth.validate("test-token-abcdefghijklmnopqrstuvwxyz123456").await);
-        assert!(auth.validate("Bearer test-token-abcdefghijklmnopqrstuvwxyz123456").await);
+        assert!(
+            auth.validate("test-token-abcdefghijklmnopqrstuvwxyz123456")
+                .await
+        );
+        assert!(
+            auth.validate("Bearer test-token-abcdefghijklmnopqrstuvwxyz123456")
+                .await
+        );
     }
 
     #[tokio::test]
@@ -183,7 +192,11 @@ mod tests {
         let auth = TokenAuth::new();
 
         // Not registered
-        assert!(!auth.validate("not-registered-token-abcdefghijklmnopqrstuvwxyz").await);
+        assert!(
+            !auth
+                .validate("not-registered-token-abcdefghijklmnopqrstuvwxyz")
+                .await
+        );
     }
 
     #[tokio::test]
@@ -203,7 +216,9 @@ mod tests {
         assert_eq!(auth.token_count().await, 1);
 
         // Get token info
-        let info = auth.get_token_info("test-token-abcdefghijklmnopqrstuvwxyz123456").await;
+        let info = auth
+            .get_token_info("test-token-abcdefghijklmnopqrstuvwxyz123456")
+            .await;
         assert!(info.is_some());
         assert_eq!(info.unwrap().device_id, "device-1");
     }
@@ -222,10 +237,16 @@ mod tests {
         .unwrap();
 
         // Revoke it
-        auth.revoke("test-token-abcdefghijklmnopqrstuvwxyz123456").await.unwrap();
+        auth.revoke("test-token-abcdefghijklmnopqrstuvwxyz123456")
+            .await
+            .unwrap();
 
         // Should no longer be valid
-        assert!(!auth.validate("test-token-abcdefghijklmnopqrstuvwxyz123456").await);
+        assert!(
+            !auth
+                .validate("test-token-abcdefghijklmnopqrstuvwxyz123456")
+                .await
+        );
         assert_eq!(auth.token_count().await, 0);
     }
 }

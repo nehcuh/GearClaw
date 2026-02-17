@@ -487,22 +487,26 @@ impl ConfigValidator {
     pub fn validate(config: &Config) -> Result<(), GearClawError> {
         // Validate LLM config
         if config.llm.primary.is_empty() {
-            return Err(GearClawError::Domain(crate::error::DomainError::ConfigInvalid {
-                field: "llm.primary".to_string(),
-                reason: "Primary model cannot be empty".to_string(),
-            }));
+            return Err(GearClawError::Domain(
+                crate::error::DomainError::ConfigInvalid {
+                    field: "llm.primary".to_string(),
+                    reason: "Primary model cannot be empty".to_string(),
+                },
+            ));
         }
 
         // Validate security level
         let valid_security = ["deny", "allowlist", "full"];
         if !valid_security.contains(&config.tools.security.as_str()) {
-            return Err(GearClawError::Domain(crate::error::DomainError::ConfigInvalid {
-                field: "tools.security".to_string(),
-                reason: format!(
-                    "Invalid security level '{}'. Must be one of: {:?}",
-                    config.tools.security, valid_security
-                ),
-            }));
+            return Err(GearClawError::Domain(
+                crate::error::DomainError::ConfigInvalid {
+                    field: "tools.security".to_string(),
+                    reason: format!(
+                        "Invalid security level '{}'. Must be one of: {:?}",
+                        config.tools.security, valid_security
+                    ),
+                },
+            ));
         }
 
         Ok(())
@@ -521,8 +525,9 @@ impl Config {
 
     /// Save configuration to file
     pub fn save(&self, path: &PathBuf) -> Result<(), GearClawError> {
-        let content = serde_yml::to_string(self)
-            .map_err(|e| GearClawError::config_parse_error(format!("Serialization failed: {}", e)))?;
+        let content = serde_yml::to_string(self).map_err(|e| {
+            GearClawError::config_parse_error(format!("Serialization failed: {}", e))
+        })?;
         std::fs::write(path, content)?;
         Ok(())
     }
@@ -574,4 +579,3 @@ impl Config {
 pub fn default_endpoint() -> String {
     DEFAULT_ENDPOINT.to_string()
 }
-

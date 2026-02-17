@@ -6,12 +6,7 @@ pub mod adapter;
 pub mod platforms;
 
 pub use adapter::{
-    ChannelAdapter,
-    ChannelManager,
-    ChannelError,
+    ChannelAdapter, ChannelError, ChannelManager, IncomingMessage, MessageContent, MessageSource,
     MessageTarget,
-    MessageContent,
-    IncomingMessage,
-    MessageSource,
 };
 pub use platforms::discord::DiscordAdapter;

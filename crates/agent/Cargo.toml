@@ -1,0 +1,12 @@
+[package]
+name = "gearclaw_agent"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+gearclaw_core = { path = "../core" }
+gearclaw_llm = { path = "../llm" }
+gearclaw_tools = { path = "../tools" }
+gearclaw_session = { path = "../session" }
+gearclaw_memory = { path = "../memory" }
+gearclaw_mcp = { path = "../mcp" }

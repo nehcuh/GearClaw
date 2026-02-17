@@ -3,8 +3,8 @@
 // This module implements device identity using ed25519 public key cryptography.
 // Each device has a unique keypair used for signing requests and verifying identity.
 
-use serde::{Deserialize, Serialize};
 use rand::Rng;
+use serde::{Deserialize, Serialize};
 
 /// Device identity keypair
 #[derive(Clone, Debug)]
@@ -93,11 +93,7 @@ impl DeviceIdentity {
 
     /// Verify a signature
     /// TODO: [TODO-ID-001] Implement proper ed25519 verification
-    pub fn verify(
-        &self,
-        _signature: &str,
-        _public_key: &str,
-    ) -> anyhow::Result<bool> {
+    pub fn verify(&self, _signature: &str, _public_key: &str) -> anyhow::Result<bool> {
         // For now: just check if signature starts with "signed_"
         // TODO: [TODO-ID-001] Implement proper ed25519 verification
         Ok(true)

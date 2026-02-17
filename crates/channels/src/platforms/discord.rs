@@ -2,15 +2,19 @@
 //
 // Implements Discord bot integration using twilight-rs library.
 
-use crate::adapter::{ChannelAdapter, ChannelError, MessageTarget, MessageContent, IncomingMessage, MessageSource};
+use crate::adapter::{
+    ChannelAdapter, ChannelError, IncomingMessage, MessageContent, MessageSource, MessageTarget,
+};
 use async_trait::async_trait;
 use serde_json::json;
 use std::pin::Pin;
 use std::sync::Arc;
-use twilight_gateway::{Event, EventTypeFlags, Intents, Shard, ShardId, StreamExt as TwilightStreamExt};
+use tokio::sync::broadcast;
+use twilight_gateway::{
+    Event, EventTypeFlags, Intents, Shard, ShardId, StreamExt as TwilightStreamExt,
+};
 use twilight_http::Client as HttpClient;
 use twilight_model::id::{marker::ChannelMarker, Id};
-use tokio::sync::broadcast;
 
 /// Discord adapter configuration
 #[derive(Debug, Clone)]
@@ -25,8 +29,7 @@ pub struct DiscordConfig {
 impl Default for DiscordConfig {
     fn default() -> Self {
         Self {
-            bot_token: std::env::var("DISCORD_BOT_TOKEN")
-                .unwrap_or_else(|_| String::new()),
+            bot_token: std::env::var("DISCORD_BOT_TOKEN").unwrap_or_else(|_| String::new()),
             message_limit: 2000,
         }
     }
@@ -53,8 +56,8 @@ impl DiscordAdapter {
 
     /// Create from environment variables
     pub fn from_env() -> Result<Self, ChannelError> {
-        let bot_token = std::env::var("DISCORD_BOT_TOKEN")
-            .map_err(|_| ChannelError::AuthenticationFailed {
+        let bot_token =
+            std::env::var("DISCORD_BOT_TOKEN").map_err(|_| ChannelError::AuthenticationFailed {
                 platform: "discord".to_string(),
                 source: "DISCORD_BOT_TOKEN not set".to_string(),
             })?;
@@ -100,16 +103,20 @@ impl DiscordAdapter {
         if identifier.starts_with('<') && identifier.ends_with('>') {
             // Channel mention <#123456789>
             let id_str = identifier.trim_start_matches("<#").trim_end_matches(">");
-            id_str.parse::<u64>().map_err(|_| ChannelError::ResolveFailed {
-                identifier: identifier.to_string(),
-                source: "Invalid snowflake ID".to_string(),
-            })
+            id_str
+                .parse::<u64>()
+                .map_err(|_| ChannelError::ResolveFailed {
+                    identifier: identifier.to_string(),
+                    source: "Invalid snowflake ID".to_string(),
+                })
         } else if identifier.chars().all(|c| c.is_numeric()) && identifier.len() <= 20 {
             // Raw snowflake ID
-            identifier.parse::<u64>().map_err(|_| ChannelError::ResolveFailed {
-                identifier: identifier.to_string(),
-                source: "Invalid snowflake ID".to_string(),
-            })
+            identifier
+                .parse::<u64>()
+                .map_err(|_| ChannelError::ResolveFailed {
+                    identifier: identifier.to_string(),
+                    source: "Invalid snowflake ID".to_string(),
+                })
         } else {
             Err(ChannelError::ResolveFailed {
                 identifier: identifier.to_string(),
@@ -166,7 +173,12 @@ impl ChannelAdapter for DiscordAdapter {
                             Event::GuildCreate(_) => "GuildCreate",
                             _ => "Other",
                         };
-                        tracing::info!("Received Discord event #{}: {} ({:?})", event_count, event_name, std::mem::discriminant(&event));
+                        tracing::info!(
+                            "Received Discord event #{}: {} ({:?})",
+                            event_count,
+                            event_name,
+                            std::mem::discriminant(&event)
+                        );
                         event
                     }
                     Err(e) => {
@@ -176,7 +188,9 @@ impl ChannelAdapter for DiscordAdapter {
                         let error_str = e.to_string().to_lowercase();
                         if error_str.contains("401") || error_str.contains("unauthorized") {
                             tracing::error!("❌ Discord Bot Token is invalid or expired!");
-                            tracing::error!("Please check your DISCORD_BOT_TOKEN environment variable");
+                            tracing::error!(
+                                "Please check your DISCORD_BOT_TOKEN environment variable"
+                            );
                         } else if error_str.contains("disallowed intent") {
                             tracing::error!("❌ MESSAGE CONTENT INTENT is not enabled!");
                             tracing::error!("Go to: https://discord.com/developers/applications");
@@ -198,7 +212,8 @@ impl ChannelAdapter for DiscordAdapter {
                         continue;
                     }
 
-                    tracing::info!("📨 Processing MessageCreate: author={}, content={}",
+                    tracing::info!(
+                        "📨 Processing MessageCreate: author={}, content={}",
                         msg.author.name,
                         msg.content.chars().take(50).collect::<String>()
                     );
@@ -241,9 +256,11 @@ impl ChannelAdapter for DiscordAdapter {
         Ok(())
     }
 
-    async fn send_message(&self, target: MessageTarget, content: MessageContent)
-        -> Result<(), ChannelError>
-    {
+    async fn send_message(
+        &self,
+        target: MessageTarget,
+        content: MessageContent,
+    ) -> Result<(), ChannelError> {
         let channel_id = match &target {
             MessageTarget::Channel(id) => id,
             MessageTarget::DirectMessage(_) => {
@@ -264,7 +281,9 @@ impl ChannelAdapter for DiscordAdapter {
         let parsed_id = Self::parse_channel_id(channel_id)?;
 
         // Get message text
-        let text = content.text.as_ref()
+        let text = content
+            .text
+            .as_ref()
             .ok_or_else(|| ChannelError::SendFailed {
                 target: target.clone(),
                 source: "Message content is empty".to_string(),
@@ -299,7 +318,9 @@ impl ChannelAdapter for DiscordAdapter {
         Ok(())
     }
 
-    fn on_message(&self) -> Pin<Box<dyn futures_util::stream::Stream<Item = IncomingMessage> + Send>> {
+    fn on_message(
+        &self,
+    ) -> Pin<Box<dyn futures_util::stream::Stream<Item = IncomingMessage> + Send>> {
         tracing::info!("📞 on_message() called, creating receiver");
 
         // Create a new receiver from the broadcast channel

@@ -2,19 +2,19 @@ mod cli;
 
 use clap::Parser;
 use tracing::info;
-use tracing_subscriber::{fmt, EnvFilter, prelude::*};
+use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
 use crate::cli::{Cli, Commands};
-use gearclaw_core::error::GearClawError;
 use gearclaw_core::agent::Agent;
 use gearclaw_core::config::Config;
+use gearclaw_core::error::GearClawError;
 
 #[tokio::main]
 async fn main() -> Result<(), GearClawError> {
     // Initialize tracing
-    let env_filter = EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| EnvFilter::new("gearclaw=info,warn"));
-    
+    let env_filter =
+        EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("gearclaw=info,warn"));
+
     tracing_subscriber::registry()
         .with(env_filter)
         .with(fmt::layer())
@@ -37,7 +37,9 @@ async fn main() -> Result<(), GearClawError> {
     // Handle ConfigSample immediately without loading config
     if let Some(Commands::ConfigSample { output }) = &cli.command {
         let sample_config = Config::sample();
-        let path = output.clone().unwrap_or_else(|| std::path::PathBuf::from("./gearclaw.sample.toml"));
+        let path = output
+            .clone()
+            .unwrap_or_else(|| std::path::PathBuf::from("./gearclaw.sample.toml"));
         sample_config.save(&path)?;
         println!("✅ 示例配置已生成: {:?}", path);
         return Ok(());
@@ -77,34 +79,45 @@ async fn main() -> Result<(), GearClawError> {
         }
         Some(Commands::Run { prompt, session }) => {
             // Run single command
-            let mut sess = agent.session_manager.get_or_create_session(
-                session.as_deref().unwrap_or("default")
-            )?;
+            let mut sess = agent
+                .session_manager
+                .get_or_create_session(session.as_deref().unwrap_or("default"))?;
             let _ = agent.process_message(&mut sess, &prompt).await?;
             println!(); // Ensure newline
             agent.session_manager.save_session(&sess).await?;
         }
-        Some(Commands::Memory { command }) => {
-            match command {
-                crate::cli::MemoryCommands::Sync => {
-                    agent.memory_manager.sync().await?;
-                    println!("✅ 记忆同步完成");
-                }
-                crate::cli::MemoryCommands::Search { query } => {
-                    let results = agent.memory_manager.search(&query, 5).await?;
-                    if results.is_empty() {
-                         println!("没有找到相关记忆");
-                    } else {
-                         println!("🔍 搜索结果:");
-                         for (i, res) in results.iter().enumerate() {
-                             println!("{}. [{:.2}] {} (Line {})", i+1, res.score, res.path, res.start_line.unwrap_or(0));
-                             let preview: String = res.text.lines().take(1).collect::<String>().chars().take(80).collect();
-                             println!("   {}...", preview);
-                         }
+        Some(Commands::Memory { command }) => match command {
+            crate::cli::MemoryCommands::Sync => {
+                agent.memory_manager.sync().await?;
+                println!("✅ 记忆同步完成");
+            }
+            crate::cli::MemoryCommands::Search { query } => {
+                let results = agent.memory_manager.search(&query, 5).await?;
+                if results.is_empty() {
+                    println!("没有找到相关记忆");
+                } else {
+                    println!("🔍 搜索结果:");
+                    for (i, res) in results.iter().enumerate() {
+                        println!(
+                            "{}. [{:.2}] {} (Line {})",
+                            i + 1,
+                            res.score,
+                            res.path,
+                            res.start_line.unwrap_or(0)
+                        );
+                        let preview: String = res
+                            .text
+                            .lines()
+                            .take(1)
+                            .collect::<String>()
+                            .chars()
+                            .take(80)
+                            .collect();
+                        println!("   {}...", preview);
                     }
                 }
             }
-        }
+        },
         Some(Commands::TestMcp) => {
             println!("🧪 Testing System Capabilities...");
             println!("================================");
@@ -140,32 +153,46 @@ async fn main() -> Result<(), GearClawError> {
             // 3. Verify Agent Tool Execution (Mock)
             println!("\n🤖 [3/3] Verifying Agent Tool Execution (Mock Integration)...");
             // Create a dummy session
-            let mut session = agent.session_manager.get_or_create_session("test_session")?;
-            
+            let mut session = agent
+                .session_manager
+                .get_or_create_session("test_session")?;
+
             // Define a test case
             let target_tool = "filesystem__list_directory";
             if tools.iter().any(|t| t.name == target_tool) {
                 let args_str = r#"{"path": "/private/tmp"}"#;
-                println!("Simulating Agent calling '{}' with args: {}", target_tool, args_str);
-                
-                match agent.execute_tool_call(&mut session, target_tool, args_str).await {
+                println!(
+                    "Simulating Agent calling '{}' with args: {}",
+                    target_tool, args_str
+                );
+
+                match agent
+                    .execute_tool_call(&mut session, target_tool, args_str)
+                    .await
+                {
                     Ok(result) => {
                         if result.success {
                             println!("✅ Agent successfully executed MCP tool!");
-                            println!("Output snippet: {}", result.output.lines().take(3).collect::<Vec<_>>().join("\n"));
+                            println!(
+                                "Output snippet: {}",
+                                result.output.lines().take(3).collect::<Vec<_>>().join("\n")
+                            );
                         } else {
                             println!("❌ Agent executed tool but it returned failure.");
                             println!("Error: {:?}", result.error);
                         }
-                    },
+                    }
                     Err(e) => {
                         println!("❌ Agent failed to execute tool: {}", e);
                     }
                 }
             } else {
-                println!("⚠️  Skipping Agent Mock test: '{}' tool not found.", target_tool);
+                println!(
+                    "⚠️  Skipping Agent Mock test: '{}' tool not found.",
+                    target_tool
+                );
             }
-            
+
             println!("\n✨ Verification Complete.");
         }
         Some(Commands::Gateway { host, port, dev }) => {
@@ -182,13 +209,15 @@ async fn main() -> Result<(), GearClawError> {
 }
 
 fn print_banner() {
-    println!(r#"
+    println!(
+        r#"
    ______                  ________            
   / ____/___  ____ ______ / ____/ /___ __      __
  / / __/ __ \/ __ `/ ___// /   / / __ `/ | /| / /
 / /_/ /  ___/ /_/ / /   / /___/ / /_/ /| |/ |/ / 
 \____/\____/\__,_/_/    \____/_/\__,_/ |__/|__/  
-    "#);
+    "#
+    );
 }
 
 fn handle_init() -> Result<(), GearClawError> {
@@ -197,7 +226,8 @@ fn handle_init() -> Result<(), GearClawError> {
     println!("🦾⚙️ GearClaw 初始化");
     println!("================");
 
-    let home = dirs::home_dir().ok_or_else(|| GearClawError::ConfigNotFound("无法找到用户主目录".to_string()))?;
+    let home = dirs::home_dir()
+        .ok_or_else(|| GearClawError::ConfigNotFound("无法找到用户主目录".to_string()))?;
     let gearclaw_dir = home.join(".gearclaw");
     let config_path = gearclaw_dir.join("config.toml");
     let openclaw_dir = home.join(".openclaw");
@@ -205,9 +235,11 @@ fn handle_init() -> Result<(), GearClawError> {
     if config_path.exists() {
         print!("⚠️  配置文件已存在于 {:?}。是否覆盖? [y/N] ", config_path);
         io::stdout().flush().map_err(GearClawError::IoError)?;
-        
+
         let mut input = String::new();
-        io::stdin().read_line(&mut input).map_err(GearClawError::IoError)?;
+        io::stdin()
+            .read_line(&mut input)
+            .map_err(GearClawError::IoError)?;
         if !input.trim().eq_ignore_ascii_case("y") {
             println!("操作已取消");
             return Ok(());
@@ -226,9 +258,11 @@ fn handle_init() -> Result<(), GearClawError> {
 
     print!("请选择 [1/2] (默认 1): ");
     io::stdout().flush().map_err(GearClawError::IoError)?;
-    
+
     let mut input = String::new();
-    io::stdin().read_line(&mut input).map_err(GearClawError::IoError)?;
+    io::stdin()
+        .read_line(&mut input)
+        .map_err(GearClawError::IoError)?;
     let choice = input.trim();
 
     let mut config = Config::sample();
@@ -254,7 +288,7 @@ fn handle_init() -> Result<(), GearClawError> {
     if !skills_dir.exists() && choice != "2" {
         std::fs::create_dir_all(&skills_dir).map_err(GearClawError::IoError)?;
         println!("✅ 创建技能目录: {:?}", skills_dir);
-        
+
         // Create a sample skill
         let sample_skill_dir = skills_dir.join("hello");
         std::fs::create_dir_all(&sample_skill_dir).map_err(GearClawError::IoError)?;
@@ -272,7 +306,8 @@ This skill allows you to say hello.
 echo "Hello from GearClaw Skill!"
 ```
 "#;
-        std::fs::write(sample_skill_dir.join("SKILL.md"), skill_md).map_err(GearClawError::IoError)?;
+        std::fs::write(sample_skill_dir.join("SKILL.md"), skill_md)
+            .map_err(GearClawError::IoError)?;
         println!("✅ 创建示例技能: hello_world");
     }
 
@@ -285,7 +320,7 @@ echo "Hello from GearClaw Skill!"
     // Save config
     config.save(&config_path)?;
     println!("✅ 配置文件已保存: {:?}", config_path);
-    
+
     println!("\n🎉 初始化完成! 你现在可以运行 `gearclaw` 开始使用了。");
 
     Ok(())
@@ -297,8 +332,8 @@ async fn handle_gateway(
     port: Option<u16>,
     dev: bool,
 ) -> Result<(), GearClawError> {
-    use gearclaw_channels::{ChannelAdapter, DiscordAdapter};
     use gearclaw_channels::platforms::discord::DiscordConfig;
+    use gearclaw_channels::{ChannelAdapter, DiscordAdapter};
     use gearclaw_gateway::{GatewayServer, MethodHandlers};
     use std::sync::Arc;
 
@@ -308,7 +343,8 @@ async fn handle_gateway(
 
     // Configure logging
     if dev {
-        let env_filter = EnvFilter::new("gearclaw=debug,gearclaw_gateway=debug,gearclaw_channels=debug");
+        let env_filter =
+            EnvFilter::new("gearclaw=debug,gearclaw_gateway=debug,gearclaw_channels=debug");
         tracing_subscriber::registry()
             .with(env_filter)
             .try_init()
@@ -383,13 +419,19 @@ async fn handle_gateway(
                 // Process message with agent
                 tracing::info!("🤖 Calling Agent.process_channel_message()...");
 
-                match agent_clone.process_channel_message(
-                    &incoming_msg.platform,
-                    &source_id,
-                    &incoming_msg.content,
-                ).await {
+                match agent_clone
+                    .process_channel_message(
+                        &incoming_msg.platform,
+                        &source_id,
+                        &incoming_msg.content,
+                    )
+                    .await
+                {
                     Ok(response) => {
-                        tracing::info!("✅ Agent.process_channel_message() returned, response length: {}", response.len());
+                        tracing::info!(
+                            "✅ Agent.process_channel_message() returned, response length: {}",
+                            response.len()
+                        );
 
                         if response.is_empty() {
                             tracing::debug!("Agent chose not to respond (trigger not met)");
@@ -397,16 +439,19 @@ async fn handle_gateway(
                             tracing::info!("Agent response: {}", response);
 
                             // Send response back to Discord
-                            use gearclaw_channels::{MessageTarget, MessageContent};
+                            use gearclaw_channels::{MessageContent, MessageTarget};
 
-                            let channel_id = match incoming_msg.metadata.get("channel_id")
-                                .and_then(|v| v.as_str()) {
-                                    Some(id) => id,
-                                    None => {
-                                        tracing::error!("Missing channel_id in message metadata");
-                                        continue;
-                                    }
-                                };
+                            let channel_id = match incoming_msg
+                                .metadata
+                                .get("channel_id")
+                                .and_then(|v| v.as_str())
+                            {
+                                Some(id) => id,
+                                None => {
+                                    tracing::error!("Missing channel_id in message metadata");
+                                    continue;
+                                }
+                            };
 
                             let target = MessageTarget::Channel(channel_id.to_string());
                             let content = MessageContent {
@@ -417,7 +462,10 @@ async fn handle_gateway(
                             if let Err(e) = discord.send_message(target, content).await {
                                 tracing::error!("Failed to send response to Discord: {}", e);
                             } else {
-                                tracing::info!("✅ Successfully sent response to Discord channel {}", channel_id);
+                                tracing::info!(
+                                    "✅ Successfully sent response to Discord channel {}",
+                                    channel_id
+                                );
                             }
                         }
                     }
@@ -459,13 +507,14 @@ async fn handle_gateway(
     let handlers = MethodHandlers::new();
     handlers.set_agent(agent.clone()).await;
 
-    let server = GatewayServer::new(gw_config)
-        .with_handlers(Arc::new(handlers));
+    let server = GatewayServer::new(gw_config).with_handlers(Arc::new(handlers));
 
     println!("🌐 Gateway 服务器启动中...");
     println!();
 
-    server.start().await
+    server
+        .start()
+        .await
         .map_err(|e| GearClawError::Other(format!("Gateway error: {}", e)))?;
 
     Ok(())
