@@ -194,6 +194,16 @@ impl From<rusqlite::Error> for GearClawError {
     }
 }
 
+impl From<gearclaw_llm::LlmError> for GearClawError {
+    fn from(err: gearclaw_llm::LlmError) -> Self {
+        match err {
+            gearclaw_llm::LlmError::Request(message) => Self::llm_error(message),
+            gearclaw_llm::LlmError::Response(message) => Self::llm_response_error(message),
+            gearclaw_llm::LlmError::Json(source) => Self::from(source),
+        }
+    }
+}
+
 // ============================================================================
 // Backward Compatibility Layer
 // ============================================================================
