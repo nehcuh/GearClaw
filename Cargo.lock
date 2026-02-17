@@ -809,6 +809,7 @@ dependencies = [
  "eventsource-stream",
  "futures",
  "gearclaw_llm",
+ "gearclaw_session",
  "glob",
  "hex",
  "regex",
@@ -883,7 +884,12 @@ dependencies = [
 name = "gearclaw_session"
 version = "0.1.0"
 dependencies = [
- "gearclaw_core",
+ "chrono",
+ "gearclaw_llm",
+ "serde",
+ "serde_json",
+ "thiserror 1.0.69",
+ "tokio",
 ]
 
 [[package]]

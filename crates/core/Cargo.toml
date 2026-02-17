@@ -5,6 +5,7 @@ edition = "2021"
 
 [dependencies]
 gearclaw_llm = { path = "../llm" }
+gearclaw_session = { path = "../session" }
 tokio = { version = "1.49", features = ["full"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
