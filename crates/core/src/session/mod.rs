@@ -1,3 +1,5 @@
+//! Compatibility wrapper for session subsystem.
+//! Delegates to `gearclaw_session` while preserving `gearclaw_core` API.
 use crate::config::SessionConfig;
 use crate::error::GearClawError;
 

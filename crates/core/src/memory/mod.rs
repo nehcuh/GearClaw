@@ -1,3 +1,5 @@
+//! Compatibility wrapper for memory subsystem.
+//! Delegates to `gearclaw_memory` while preserving `gearclaw_core` API.
 use crate::config::MemoryConfig as CoreMemoryConfig;
 use crate::error::GearClawError;
 use crate::llm::LLMClient;
@@ -32,7 +34,11 @@ impl MemoryManager {
             .map_err(|e| GearClawError::Other(e.to_string()))
     }
 
-    pub async fn search(&self, query: &str, limit: usize) -> Result<Vec<SearchResult>, GearClawError> {
+    pub async fn search(
+        &self,
+        query: &str,
+        limit: usize,
+    ) -> Result<Vec<SearchResult>, GearClawError> {
         self.inner
             .search(query, limit)
             .await

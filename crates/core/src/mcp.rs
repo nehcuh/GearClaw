@@ -1,3 +1,5 @@
+//! Compatibility wrapper for MCP subsystem.
+//! Delegates to `gearclaw_mcp` while preserving `gearclaw_core` API.
 use crate::config::{McpConfig as CoreMcpConfig, McpServerConfig as CoreMcpServerConfig};
 use crate::error::GearClawError;
 use crate::tools::{ToolResult as CoreToolResult, ToolSpec as CoreToolSpec};

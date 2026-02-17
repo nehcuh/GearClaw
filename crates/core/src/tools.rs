@@ -1,3 +1,6 @@
+//! Compatibility wrapper for tools subsystem.
+//! Delegates base executor behavior to `gearclaw_tools` and augments
+//! macOS-specific tool exposure in `gearclaw_core`.
 use crate::error::GearClawError;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
