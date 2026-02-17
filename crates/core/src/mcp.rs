@@ -1,57 +1,71 @@
-//! MCP (Model Context Protocol) Integration
-//!
-//! This module provides MCP client functionality for integrating external tools.
-//! Note: Full MCP support requires the `rmcp` crate which needs nightly Rust.
-//! This is a stub implementation that can be extended when rmcp becomes stable.
-
-use crate::config::McpConfig;
+use crate::config::{McpConfig as CoreMcpConfig, McpServerConfig as CoreMcpServerConfig};
 use crate::error::GearClawError;
-use crate::tools::{ToolResult, ToolSpec};
-use tracing::warn;
+use crate::tools::{ToolResult as CoreToolResult, ToolSpec as CoreToolSpec};
+use std::collections::HashMap;
 
-/// MCP Manager for handling Model Context Protocol servers
 pub struct McpManager {
-    #[allow(dead_code)]
-    config: McpConfig,
+    inner: gearclaw_mcp::McpManager,
 }
 
 impl McpManager {
-    /// Create a new MCP manager
-    pub fn new(config: McpConfig) -> Self {
-        Self { config }
-    }
-
-    /// Initialize MCP clients
-    ///
-    /// Note: This is a stub implementation. Full MCP support requires
-    /// the rmcp crate which currently needs nightly Rust (edition 2024).
-    pub async fn init_clients(&self) -> Result<(), GearClawError> {
-        if !self.config.servers.is_empty() {
-            warn!(
-                "MCP servers configured but MCP support is disabled. \
-                 {} server(s) will not be initialized. \
-                 To enable MCP, compile with nightly Rust and the 'mcp' feature.",
-                self.config.servers.len()
-            );
+    pub fn new(config: CoreMcpConfig) -> Self {
+        Self {
+            inner: gearclaw_mcp::McpManager::new(to_mcp_config(config)),
         }
-        Ok(())
     }
 
-    /// List available MCP tools
-    pub async fn list_tools(&self) -> Vec<ToolSpec> {
-        // No tools available in stub implementation
-        vec![]
+    pub async fn init_clients(&self) -> Result<(), GearClawError> {
+        self.inner
+            .init_clients()
+            .await
+            .map_err(|e| GearClawError::Other(e.to_string()))
     }
 
-    /// Call an MCP tool
+    pub async fn list_tools(&self) -> Vec<CoreToolSpec> {
+        self.inner
+            .list_tools()
+            .await
+            .into_iter()
+            .map(|t| CoreToolSpec {
+                name: t.name,
+                description: t.description,
+                requires_args: t.requires_args,
+                parameters: t.parameters,
+            })
+            .collect()
+    }
+
     pub async fn call_tool(
         &self,
         name: &str,
-        _args: serde_json::Value,
-    ) -> Result<ToolResult, GearClawError> {
-        Err(GearClawError::tool_not_found(format!(
-            "MCP tool '{}' not available (MCP support disabled)",
-            name
-        )))
+        args: serde_json::Value,
+    ) -> Result<CoreToolResult, GearClawError> {
+        self.inner
+            .call_tool(name, args)
+            .await
+            .map(|r| CoreToolResult {
+                success: r.success,
+                output: r.output,
+                error: r.error,
+            })
+            .map_err(|e| GearClawError::Other(e.to_string()))
+    }
+}
+
+fn to_mcp_config(config: CoreMcpConfig) -> gearclaw_mcp::McpConfig {
+    gearclaw_mcp::McpConfig {
+        servers: config
+            .servers
+            .into_iter()
+            .map(|(k, v)| (k, to_mcp_server_config(v)))
+            .collect::<HashMap<_, _>>(),
+    }
+}
+
+fn to_mcp_server_config(config: CoreMcpServerConfig) -> gearclaw_mcp::McpServerConfig {
+    gearclaw_mcp::McpServerConfig {
+        command: config.command,
+        args: config.args,
+        env: config.env,
     }
 }
