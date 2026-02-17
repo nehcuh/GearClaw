@@ -810,6 +810,7 @@ dependencies = [
  "futures",
  "gearclaw_llm",
  "gearclaw_mcp",
+ "gearclaw_memory",
  "gearclaw_session",
  "glob",
  "hex",
@@ -881,7 +882,14 @@ name = "gearclaw_memory"
 version = "0.1.0"
 dependencies = [
  "async-trait",
- "gearclaw_core",
+ "gearclaw_llm",
+ "glob",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "sha2",
+ "thiserror 1.0.69",
+ "tracing",
 ]
 
 [[package]]

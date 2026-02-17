@@ -5,6 +5,7 @@ edition = "2021"
 
 [dependencies]
 gearclaw_llm = { path = "../llm" }
+gearclaw_memory = { path = "../memory" }
 gearclaw_mcp = { path = "../mcp" }
 gearclaw_session = { path = "../session" }
 tokio = { version = "1.49", features = ["full"] }
