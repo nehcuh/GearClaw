@@ -34,6 +34,11 @@ impl FrontmostAppReader {
 
         if !output.status.success() {
             if stderr.contains("not authorized") || stderr.contains("Not authorized") {
+                tracing::warn!(
+                    tool = "macos_get_frontmost_app",
+                    error = "PERMISSION_DENIED",
+                    "辅助功能权限未授权"
+                );
                 return Err(GearClawError::ToolExecutionError(
                     "ERROR:PERMISSION_DENIED: 查询前台应用需要辅助功能权限，\
                      请前往 系统设置 → 隐私与安全性 → 辅助功能 授权"
@@ -54,6 +59,7 @@ impl FrontmostAppReader {
             ));
         }
 
+        tracing::debug!(tool = "macos_get_frontmost_app", app = %app_name, "前台应用查询成功");
         Ok(format!("Frontmost app: {}", app_name))
     }
 }

@@ -40,12 +40,18 @@ impl AccessibilityChecker {
 
         let stderr = String::from_utf8_lossy(&output.stderr).to_string();
         if stderr.contains("not authorized") || stderr.contains("Not authorized") {
+            tracing::warn!(tool = "macos_check_accessibility", "辅助功能权限未授权");
             Ok("DENIED: 辅助功能权限未授权。\
                  请前往 系统设置 → 隐私与安全性 → 辅助功能，\
                  为终端（Terminal）或本应用授权后重试。"
                 .to_string())
         } else {
             // Other error — treat as permission denied to be safe
+            tracing::warn!(
+                tool = "macos_check_accessibility",
+                error = stderr.trim(),
+                "无法验证辅助功能权限"
+            );
             Ok(format!(
                 "DENIED: 无法验证权限（{}），\
                  请确认辅助功能已授权。",

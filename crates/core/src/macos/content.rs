@@ -13,7 +13,9 @@
 
 use crate::error::GearClawError;
 use crate::macos::clipboard::{ClipboardManager, ClipboardType};
+use std::process::Stdio;
 use std::time::Duration;
+use tokio::io::AsyncWriteExt;
 use tokio::process::Command;
 use tokio::time::{sleep, timeout};
 
@@ -62,6 +64,9 @@ impl ContentReader {
         timeout_ms: u64,
         max_chars: usize,
     ) -> Result<String, GearClawError> {
+        // Allow the frontmost application focus to settle (e.g. after bring_to_front).
+        sleep(Duration::from_millis(200)).await;
+
         // Step 1: Snapshot clipboard type and content (text only)
         let original_type = self
             .clipboard
@@ -91,6 +96,11 @@ impl ContentReader {
         if !copy_output.status.success() {
             let stderr = String::from_utf8_lossy(&copy_output.stderr).to_string();
             if stderr.contains("not authorized") || stderr.contains("Not authorized") {
+                tracing::warn!(
+                    tool = "macos_read_selected_text",
+                    error = "PERMISSION_DENIED",
+                    "辅助功能权限未授权，发送 Cmd+C 失败"
+                );
                 return Err(GearClawError::ToolExecutionError(
                     "ERROR:PERMISSION_DENIED: 发送 Cmd+C 需要辅助功能权限".to_string(),
                 ));
@@ -125,12 +135,41 @@ impl ContentReader {
             }
 
             if elapsed >= deadline {
-                // Restore original text clipboard if needed before returning error
+                // Check if the app copied non-text content (e.g. image from browser)
+                let post_type = self
+                    .clipboard
+                    .content_type()
+                    .await
+                    .unwrap_or(ClipboardType::Unknown("unknown".to_string()));
+
+                // Restore original clipboard before returning any error
                 if preserve_clipboard {
                     if let Some(ref orig) = original_text {
                         let _ = self.clipboard.write(orig).await;
                     }
                 }
+
+                if matches!(post_type, ClipboardType::Image | ClipboardType::File) {
+                    tracing::debug!(
+                        tool = "macos_read_selected_text",
+                        error = "CLIPBOARD_NOT_TEXT",
+                        clipboard_type = %post_type,
+                        "应用复制了非文本内容"
+                    );
+                    return Err(GearClawError::ToolExecutionError(format!(
+                        "ERROR:CLIPBOARD_NOT_TEXT: 复制内容不是文本（类型: {}），无法读取。\
+                         建议先选中文本后再调用。",
+                        post_type
+                    )));
+                }
+
+                tracing::debug!(
+                    tool = "macos_read_selected_text",
+                    error = "CLIPBOARD_UNCHANGED",
+                    timeout_ms,
+                    "剪贴板在 {}ms 内未发生变化",
+                    timeout_ms
+                );
                 return Err(GearClawError::ToolExecutionError(
                     "ERROR:CLIPBOARD_UNCHANGED: 剪贴板未发生变化，\
                      可能没有选中任何文本，或目标应用不支持复制操作"
@@ -184,8 +223,12 @@ impl ContentReader {
     /// Read the text value of the currently focused UI element via the
     /// Accessibility (AX) API.
     ///
-    /// Tries `value` → `name` → `description` of the focused element in order,
-    /// returning the first non-empty, non-whitespace-only result.
+    /// Uses a **single** osascript call with try-on-error blocks to probe
+    /// `value` → `name` → `description` in one round-trip (max 5 s total,
+    /// not 3 × 5 s as with sequential calls).
+    ///
+    /// The script returns `"attr\tvalue"` on success, or `""` if no attribute
+    /// has readable content.
     ///
     /// # Parameters
     /// - `app_name`: optional; if provided, restricts the query to that process name.
@@ -198,67 +241,128 @@ impl ContentReader {
         app_name: Option<&str>,
         max_chars: usize,
     ) -> Result<String, GearClawError> {
-        // Build process target clause
+        // Allow the frontmost application focus to settle (e.g. after bring_to_front).
+        sleep(Duration::from_millis(200)).await;
+
         let process_clause = match app_name {
             Some(name) => format!("process \"{}\"", name),
             None => "first process whose frontmost is true".to_string(),
         };
 
-        // Try each AX attribute in order
-        for attr in &["value", "name", "description"] {
-            let script = format!(
-                "tell application \"System Events\" to tell ({}) to \
-                 get {} of focused UI element",
-                process_clause, attr
+        // Build a single AppleScript that tries value/name/description with
+        // individual try-on error blocks so one missing attribute doesn't abort
+        // the whole script. Returns "attr\tvalue" or empty string.
+        let script = format!(
+            r#"tell application "System Events"
+  tell ({process})
+    try
+      set focusEl to focused UI element
+    on error
+      return ""
+    end try
+    try
+      set v to value of focusEl as text
+      if v is not "" and v is not "missing value" then
+        return "value" & (ASCII character 9) & v
+      end if
+    end try
+    try
+      set n to name of focusEl as text
+      if n is not "" and n is not "missing value" then
+        return "name" & (ASCII character 9) & n
+      end if
+    end try
+    try
+      set d to description of focusEl as text
+      if d is not "" and d is not "missing value" then
+        return "description" & (ASCII character 9) & d
+      end if
+    end try
+    return ""
+  end tell
+end tell"#,
+            process = process_clause
+        );
+
+        // Pass script via stdin to avoid shell-escaping issues with the tab char
+        let mut child = Command::new("osascript")
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .map_err(|e| {
+                GearClawError::ToolExecutionError(format!("启动 osascript 失败: {}", e))
+            })?;
+
+        if let Some(mut stdin) = child.stdin.take() {
+            stdin.write_all(script.as_bytes()).await.map_err(|e| {
+                GearClawError::ToolExecutionError(format!("osascript stdin 写入失败: {}", e))
+            })?;
+        }
+
+        let output = timeout(OSASCRIPT_TIMEOUT, child.wait_with_output())
+            .await
+            .map_err(|_| {
+                GearClawError::ToolExecutionError("ERROR:TIMEOUT: 读取焦点字段超时".to_string())
+            })?
+            .map_err(|e| GearClawError::ToolExecutionError(format!("读取焦点字段失败: {}", e)))?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+            if stderr.contains("not authorized") || stderr.contains("Not authorized") {
+                tracing::warn!(
+                    tool = "macos_read_focused_field",
+                    error = "PERMISSION_DENIED",
+                    "辅助功能权限未授权，无法读取焦点字段"
+                );
+                return Err(GearClawError::ToolExecutionError(
+                    "ERROR:PERMISSION_DENIED: 读取焦点字段需要辅助功能权限".to_string(),
+                ));
+            }
+            return Err(GearClawError::ToolExecutionError(format!(
+                "ERROR:SCRIPT_ERROR: {}",
+                stderr.trim()
+            )));
+        }
+
+        let raw_out = String::from_utf8_lossy(&output.stdout).trim().to_string();
+
+        if raw_out.is_empty() {
+            tracing::debug!(
+                tool = "macos_read_focused_field",
+                error = "EMPTY_FIELD",
+                "焦点元素无可读文本内容"
             );
-            let fut = Command::new("osascript").arg("-e").arg(&script).output();
-            let result = timeout(OSASCRIPT_TIMEOUT, fut).await;
-
-            let output = match result {
-                Ok(Ok(o)) => o,
-                Ok(Err(_)) | Err(_) => continue, // timeout or spawn error → try next attr
-            };
-
-            if !output.status.success() {
-                let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-                if stderr.contains("not authorized") || stderr.contains("Not authorized") {
-                    return Err(GearClawError::ToolExecutionError(
-                        "ERROR:PERMISSION_DENIED: 读取焦点字段需要辅助功能权限".to_string(),
-                    ));
-                }
-                // Other error (e.g. element has no such attribute) → try next
-                continue;
-            }
-
-            let raw = String::from_utf8_lossy(&output.stdout).trim().to_string();
-            if raw.is_empty() {
-                continue;
-            }
-
-            // Apply max_chars
-            let (text, truncated) = if max_chars > 0 && raw.chars().count() > max_chars {
-                let t: String = raw.chars().take(max_chars).collect();
-                (t, true)
-            } else {
-                (raw.clone(), false)
-            };
-
-            let char_count = raw.chars().count();
-            let trunc_note = if truncated {
-                format!(", truncated to {}", max_chars)
-            } else {
-                String::new()
-            };
-
-            return Ok(format!(
-                "[field: {}{}, {} chars] {}",
-                attr, trunc_note, char_count, text
+            return Err(GearClawError::ToolExecutionError(
+                "ERROR:EMPTY_FIELD: 焦点元素无可读文本内容（value/name/description 均为空）"
+                    .to_string(),
             ));
         }
 
-        Err(GearClawError::ToolExecutionError(
-            "ERROR:EMPTY_FIELD: 焦点元素无可读文本内容（value/name/description 均为空）"
-                .to_string(),
+        // Parse "attr\tvalue"
+        let (attr, raw) = match raw_out.split_once('\t') {
+            Some((a, v)) => (a, v.to_string()),
+            None => ("value", raw_out.clone()),
+        };
+
+        // Apply max_chars
+        let (text, truncated) = if max_chars > 0 && raw.chars().count() > max_chars {
+            let t: String = raw.chars().take(max_chars).collect();
+            (t, true)
+        } else {
+            (raw.clone(), false)
+        };
+
+        let char_count = raw.chars().count();
+        let trunc_note = if truncated {
+            format!(", truncated to {}", max_chars)
+        } else {
+            String::new()
+        };
+
+        Ok(format!(
+            "[field: {}{}, {} chars] {}",
+            attr, trunc_note, char_count, text
         ))
     }
 
@@ -293,6 +397,13 @@ impl ContentReader {
                 r#"tell application "Terminal" to get contents of selected tab of front window"#.to_string()
             }
             other => {
+                tracing::debug!(
+                    tool = "macos_read_document",
+                    error = "UNSUPPORTED_APP",
+                    app = other,
+                    "应用 {} 未内置适配，返回 UNSUPPORTED_APP",
+                    other
+                );
                 return Err(GearClawError::ToolExecutionError(format!(
                     "ERROR:UNSUPPORTED_APP: 应用 \"{}\" 未内置适配。\
                      建议使用 macos_read_selected_text（先选中文本再调用）\
@@ -317,6 +428,13 @@ impl ContentReader {
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr).to_string();
             if stderr.contains("not authorized") || stderr.contains("Not authorized") {
+                tracing::warn!(
+                    tool = "macos_read_document",
+                    error = "PERMISSION_DENIED",
+                    app = app_name,
+                    "自动化权限未授权，无法读取 {} 文档",
+                    app_name
+                );
                 return Err(GearClawError::ToolExecutionError(format!(
                     "ERROR:PERMISSION_DENIED: 读取 {} 文档需要自动化权限，\
                      请在 系统设置 → 隐私与安全性 → 自动化 中授权",
@@ -324,6 +442,14 @@ impl ContentReader {
                 )));
             }
             if stderr.contains("doesn't understand") || stderr.contains("Can't get") {
+                tracing::warn!(
+                    tool = "macos_read_document",
+                    error = "SCRIPT_ERROR",
+                    app = app_name,
+                    stderr = stderr.trim(),
+                    "{} 脚本错误",
+                    app_name
+                );
                 return Err(GearClawError::ToolExecutionError(format!(
                     "ERROR:SCRIPT_ERROR: {} 没有打开的文档，或文档不可读（{}）",
                     app_name,
