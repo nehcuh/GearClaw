@@ -3,6 +3,8 @@ mod chat_view;
 mod input_bar;
 mod log_panel;
 mod log_store;
+mod monitor_view;
+mod multiline_input;
 mod settings_view;
 mod sidebar;
 mod status_bar;
@@ -13,6 +15,7 @@ use gpui::*;
 use tracing_subscriber::prelude::*;
 
 use app::{DesktopApp, Quit, SendMessage};
+use multiline_input::InsertNewline;
 use text_input::{
     Backspace, CopyText, CutText, Delete, End, Home, Left, PasteText, Right, SelectAll, SelectLeft,
     SelectRight, ShowCharacterPalette,
@@ -55,6 +58,7 @@ fn main() {
             KeyBinding::new("end", End, None),
             KeyBinding::new("ctrl-cmd-space", ShowCharacterPalette, None),
             KeyBinding::new("enter", SendMessage, None),
+            KeyBinding::new("enter", InsertNewline, Some("MultiLineInput")),
             KeyBinding::new("cmd-q", Quit, None),
         ]);
 

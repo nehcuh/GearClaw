@@ -98,6 +98,9 @@ pub struct LLMConfig {
     /// Embedding model
     #[serde(default = "LLMConfig::default_embedding_model")]
     pub embedding_model: String,
+    /// Temperature (sampling)
+    #[serde(default = "LLMConfig::default_temperature")]
+    pub temperature: Option<f32>,
 }
 
 impl LLMConfig {
@@ -106,6 +109,9 @@ impl LLMConfig {
     }
     fn default_embedding_model() -> String {
         DEFAULT_EMBEDDING_MODEL.to_string()
+    }
+    fn default_temperature() -> Option<f32> {
+        Some(0.7)
     }
 }
 
@@ -117,6 +123,7 @@ impl Default for LLMConfig {
             endpoint: DEFAULT_ENDPOINT.to_string(),
             api_key: None,
             embedding_model: DEFAULT_EMBEDDING_MODEL.to_string(),
+            temperature: Some(0.7),
         }
     }
 }
@@ -227,6 +234,15 @@ pub struct AgentConfig {
     /// Skills directory
     #[serde(default = "AgentConfig::default_skills_path")]
     pub skills_path: PathBuf,
+    /// Skill source cache TTL (seconds) for git_repo synchronization
+    #[serde(default = "AgentConfig::default_skill_source_cache_ttl_seconds")]
+    pub skill_source_cache_ttl_seconds: u64,
+    /// Skill search/install sources
+    #[serde(default)]
+    pub skill_sources: Vec<SkillSourceConfig>,
+    /// Skill installation trust policy
+    #[serde(default)]
+    pub skill_trust_policy: SkillTrustPolicy,
     /// Channel trigger configuration
     #[serde(default)]
     pub triggers: AgentTriggerConfig,
@@ -245,6 +261,9 @@ impl AgentConfig {
     fn default_skills_path() -> PathBuf {
         default_gearclaw_dir().join("skills")
     }
+    fn default_skill_source_cache_ttl_seconds() -> u64 {
+        300
+    }
 }
 
 impl Default for AgentConfig {
@@ -255,9 +274,66 @@ impl Default for AgentConfig {
             workspace: Self::default_workspace(),
             memory_enabled: false,
             skills_path: Self::default_skills_path(),
+            skill_source_cache_ttl_seconds: Self::default_skill_source_cache_ttl_seconds(),
+            skill_sources: vec![],
+            skill_trust_policy: SkillTrustPolicy::default(),
             triggers: AgentTriggerConfig::default(),
         }
     }
+}
+
+/// Skill source kind
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum SkillSourceKind {
+    /// Local directory containing skill folders (each folder contains SKILL.md)
+    #[default]
+    LocalDir,
+    /// Git repository containing skill folders (each folder contains SKILL.md)
+    GitRepo,
+}
+
+/// Skill source configuration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SkillSourceConfig {
+    /// Source name (for display and filtering)
+    pub name: String,
+    /// Source kind
+    #[serde(default)]
+    pub kind: SkillSourceKind,
+    /// Location (path for local_dir, git URL/path for git_repo)
+    pub location: String,
+    /// Optional revision pin (branch/tag/commit) for git_repo
+    #[serde(default)]
+    pub revision: Option<String>,
+    /// Whether this source is enabled
+    #[serde(default = "SkillSourceConfig::default_enabled")]
+    pub enabled: bool,
+    /// Whether this source is trusted
+    #[serde(default)]
+    pub trusted: bool,
+    /// Require `git verify-commit HEAD` after sync (git_repo only)
+    #[serde(default)]
+    pub verify_head_commit_signature: bool,
+}
+
+impl SkillSourceConfig {
+    fn default_enabled() -> bool {
+        true
+    }
+}
+
+/// Skill installation trust policy
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum SkillTrustPolicy {
+    /// Allow installing only local directory sources
+    #[default]
+    LocalOnly,
+    /// Allow installing only explicitly trusted sources
+    TrustedOnly,
+    /// Allow all configured sources (unsafe)
+    AllowUntrusted,
 }
 
 // ============================================================================
@@ -389,6 +465,9 @@ pub struct GatewayConfig {
     /// WebSocket path
     #[serde(default = "GatewayConfig::default_ws_path")]
     pub ws_path: String,
+    /// Allow unauthenticated requests (dangerous, dev-only)
+    #[serde(default)]
+    pub allow_unauthenticated_requests: bool,
     /// Device key path
     #[serde(default = "GatewayConfig::default_device_key_path")]
     pub device_key_path: PathBuf,
@@ -427,6 +506,7 @@ impl Default for GatewayConfig {
             host: DEFAULT_GATEWAY_HOST.to_string(),
             port: DEFAULT_GATEWAY_PORT,
             ws_path: DEFAULT_WS_PATH.to_string(),
+            allow_unauthenticated_requests: false,
             device_key_path: Self::default_device_key_path(),
             auto_start: false,
             tls_enabled: false,
@@ -544,6 +624,7 @@ impl Config {
                 endpoint: DEFAULT_ENDPOINT.to_string(),
                 api_key: None,
                 embedding_model: DEFAULT_EMBEDDING_MODEL.to_string(),
+                temperature: Some(0.7),
             },
             tools: ToolsConfig {
                 security: "full".to_string(),
@@ -562,6 +643,31 @@ impl Config {
                 workspace: default_gearclaw_dir().join("workspace"),
                 memory_enabled: true,
                 skills_path: default_gearclaw_dir().join("skills"),
+                skill_source_cache_ttl_seconds: 300,
+                skill_sources: vec![
+                    SkillSourceConfig {
+                        name: "local-default".to_string(),
+                        kind: SkillSourceKind::LocalDir,
+                        location: default_gearclaw_dir()
+                            .join("skills")
+                            .to_string_lossy()
+                            .to_string(),
+                        revision: None,
+                        enabled: true,
+                        trusted: true,
+                        verify_head_commit_signature: false,
+                    },
+                    SkillSourceConfig {
+                        name: "community-git".to_string(),
+                        kind: SkillSourceKind::GitRepo,
+                        location: "https://example.com/skills.git".to_string(),
+                        revision: None,
+                        enabled: false,
+                        trusted: false,
+                        verify_head_commit_signature: false,
+                    },
+                ],
+                skill_trust_policy: SkillTrustPolicy::LocalOnly,
                 triggers: AgentTriggerConfig::default(),
             },
             memory: MemoryConfig::default(),

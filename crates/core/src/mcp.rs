@@ -3,6 +3,7 @@
 use crate::config::{McpConfig as CoreMcpConfig, McpServerConfig as CoreMcpServerConfig};
 use crate::error::GearClawError;
 use crate::tools::{ToolResult as CoreToolResult, ToolSpec as CoreToolSpec};
+pub use gearclaw_mcp::McpCapability;
 use std::collections::HashMap;
 
 pub struct McpManager {
@@ -23,6 +24,14 @@ impl McpManager {
                 reason: e.to_string(),
             })
         })
+    }
+
+    pub fn capability(&self) -> McpCapability {
+        self.inner.capability()
+    }
+
+    pub fn is_enabled(&self) -> bool {
+        self.inner.is_enabled()
     }
 
     pub async fn list_tools(&self) -> Vec<CoreToolSpec> {

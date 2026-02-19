@@ -100,6 +100,7 @@ impl Agent {
             endpoint,
             config.llm.primary.clone(),
             config.llm.embedding_model.clone(),
+            config.llm.temperature,
         ));
 
         let tool_executor = ToolExecutor::new(&config.tools.security);
@@ -241,8 +242,10 @@ impl Agent {
             loop_count += 1;
 
             let mut tool_specs = self.tool_executor.available_tools();
-            let mcp_tools = self.mcp_manager.list_tools().await;
-            tool_specs.extend(mcp_tools);
+            if self.mcp_manager.is_enabled() {
+                let mcp_tools = self.mcp_manager.list_tools().await;
+                tool_specs.extend(mcp_tools);
+            }
 
             let llm_tools = self.convert_to_llm_tools(tool_specs);
 
@@ -419,6 +422,16 @@ impl Agent {
 
         // Check if it's an MCP tool
         if tool_name.contains("__") {
+            if !self.mcp_manager.is_enabled() {
+                return Err(GearClawError::from(crate::error::DomainError::Mcp {
+                    server: tool_name
+                        .split("__")
+                        .next()
+                        .unwrap_or("unknown")
+                        .to_string(),
+                    reason: "MCP support is disabled in this build".to_string(),
+                }));
+            }
             return self.mcp_manager.call_tool(tool_name, args).await;
         }
 

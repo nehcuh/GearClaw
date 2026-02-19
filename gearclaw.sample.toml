@@ -1,11 +1,12 @@
 llm:
-  primary: zai/glm-4.7
+  primary: glm-4.7
   fallbacks:
   - openai/gpt-4
   - anthropic/claude-3-opus
   endpoint: https://api.openai.com/v1
   api_key: null
   embedding_model: embedding-3
+  temperature: 0.7
 tools:
   security: full
   host: gateway
@@ -14,7 +15,7 @@ tools:
 session:
   session_dir: /Users/huchen/.gearclaw/sessions
   save_interval: 60
-  max_tokens: 200000
+  max_tokens: 4096
 agent:
   name: GearClaw
   system_prompt: |-
@@ -28,10 +29,35 @@ agent:
 
     请用友好、简洁的方式与用户交流。如果有不确定的地方，询问用户。
   workspace: /Users/huchen/.gearclaw/workspace
-  memory_enabled: true
+  memory_enabled: false
   skills_path: /Users/huchen/.gearclaw/skills
+  skill_source_cache_ttl_seconds: 300
+  skill_sources:
+  - name: local-default
+    kind: local_dir
+    location: /Users/huchen/.gearclaw/skills
+    revision: null
+    enabled: true
+    trusted: true
+    verify_head_commit_signature: false
+  - name: community-git
+    kind: git_repo
+    location: https://example.com/skills.git
+    revision: main
+    enabled: false
+    trusted: false
+    verify_head_commit_signature: false
+  skill_trust_policy: local_only
+  triggers:
+    mode: always
+    mention_patterns:
+    - '@agent'
+    - '@bot'
+    keywords: []
+    enabled_channels: []
+    disabled_channels: []
 memory:
-  enabled: true
+  enabled: false
   db_path: /Users/huchen/.gearclaw/memory/index.sqlite
 mcp:
   servers: {}

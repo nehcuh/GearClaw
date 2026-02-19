@@ -52,7 +52,70 @@ pub enum Commands {
         command: MemoryCommands,
     },
 
-    /// Test MCP integration
+    /// Search skills from configured sources
+    SearchSkill {
+        /// Query text (matches name/description)
+        query: String,
+        /// Optional source name filter
+        #[arg(long)]
+        source: Option<String>,
+        /// Force refresh git sources before searching
+        #[arg(long)]
+        update: bool,
+    },
+
+    /// Install a skill by name from configured sources
+    InstallSkill {
+        /// Skill name to install
+        name: String,
+        /// Optional source name filter
+        #[arg(long)]
+        source: Option<String>,
+        /// Overwrite existing installed skill
+        #[arg(long)]
+        force: bool,
+        /// Show installation plan without writing files
+        #[arg(long)]
+        dry_run: bool,
+        /// Force refresh git sources before installation
+        #[arg(long)]
+        update: bool,
+    },
+
+    /// List configured skill sources
+    ListSources,
+    /// Show recent skill installation audit records
+    ListAudit {
+        /// Number of recent audit records to show
+        #[arg(long, default_value = "20")]
+        limit: usize,
+        /// Filter by source name
+        #[arg(long)]
+        source: Option<String>,
+        /// Filter by skill name
+        #[arg(long)]
+        skill: Option<String>,
+        /// Filter by status (e.g. installed)
+        #[arg(long)]
+        status: Option<String>,
+        /// Filter by minimum timestamp (epoch seconds, inclusive)
+        #[arg(long)]
+        since: Option<u64>,
+        /// Filter by maximum timestamp (epoch seconds, inclusive)
+        #[arg(long)]
+        until: Option<u64>,
+        /// Output records as JSON
+        #[arg(long)]
+        json: bool,
+        /// Output format: text | json | jsonl
+        #[arg(long, default_value = "text", value_parser = ["text", "json", "jsonl"])]
+        output: String,
+    },
+
+    /// Show current skill installation trust policy
+    TrustPolicy,
+
+    /// Test MCP integration (shows capability status when MCP is disabled)
     TestMcp,
 
     /// Start Gateway server
@@ -68,6 +131,10 @@ pub enum Commands {
         /// Development mode (verbose logging)
         #[arg(short, long)]
         dev: bool,
+
+        /// Allow unauthenticated requests (DANGEROUS, dev-only)
+        #[arg(long)]
+        allow_unauthenticated: bool,
     },
 }
 

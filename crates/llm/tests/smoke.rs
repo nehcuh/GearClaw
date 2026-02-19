@@ -7,6 +7,7 @@ fn llm_smoke_client_construction() {
         "https://example.com/v1".to_string(),
         "gpt-test".to_string(),
         "embed-test".to_string(),
+        Some(0.7),
     );
 }
 

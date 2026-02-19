@@ -5,7 +5,7 @@ use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::pin::Pin;
 use thiserror::Error;
-use tracing::info;
+use tracing::{info, warn};
 
 #[derive(Debug, Error)]
 pub enum LlmError {
@@ -123,10 +123,17 @@ pub struct LLMClient {
     endpoint: String,
     model: String,
     embedding_model: String,
+    temperature: Option<f32>,
 }
 
 impl LLMClient {
-    pub fn new(api_key: String, endpoint: String, model: String, embedding_model: String) -> Self {
+    pub fn new(
+        api_key: String,
+        endpoint: String,
+        model: String,
+        embedding_model: String,
+        temperature: Option<f32>,
+    ) -> Self {
         Self {
             client: Client::builder()
                 .http1_only()
@@ -136,6 +143,7 @@ impl LLMClient {
             endpoint,
             model,
             embedding_model,
+            temperature,
         }
     }
 
@@ -192,8 +200,8 @@ impl LLMClient {
             model: self.model.clone(),
             messages,
             max_tokens,
-            temperature: Some(0.7),
-            tools,
+            temperature: self.temperature,
+            tools: tools.clone(),
             tool_choice: None,
             stream: Some(true),
         };
@@ -209,14 +217,83 @@ impl LLMClient {
             .await
             .map_err(|e| LlmError::Request(format!("request failed: {}", e)))?;
 
-        if !response.status().is_success() {
+        let response = if !response.status().is_success() {
             let status = response.status();
             let error_text = response.text().await.unwrap_or_default();
-            return Err(LlmError::Response(format!(
-                "API error {}: {}",
-                status, error_text
-            )));
-        }
+
+            if status == reqwest::StatusCode::BAD_REQUEST && tools.is_some() {
+                warn!(
+                    "chat completion with tools returned 400, retrying without tools: {}",
+                    error_text
+                );
+
+                let fallback_messages: Vec<Message> = request
+                    .messages
+                    .iter()
+                    .filter_map(|m| {
+                        if !matches!(m.role.as_str(), "system" | "user" | "assistant") {
+                            return None;
+                        }
+
+                        let content = m
+                            .content
+                            .as_ref()
+                            .map(|c| c.trim())
+                            .filter(|c| !c.is_empty())
+                            .map(|c| c.to_string());
+
+                        if content.is_none() {
+                            return None;
+                        }
+
+                        Some(Message {
+                            role: m.role.clone(),
+                            content,
+                            tool_calls: None,
+                            tool_call_id: None,
+                        })
+                    })
+                    .collect();
+
+                let fallback_request = ChatCompletionRequest {
+                    model: self.model.clone(),
+                    messages: fallback_messages,
+                    max_tokens,
+                    temperature: self.temperature,
+                    tools: None,
+                    tool_choice: None,
+                    stream: Some(true),
+                };
+
+                let fallback_response = self
+                    .client
+                    .post(&url)
+                    .header("Authorization", format!("Bearer {}", self.api_key))
+                    .header("Content-Type", "application/json")
+                    .json(&fallback_request)
+                    .send()
+                    .await
+                    .map_err(|e| LlmError::Request(format!("fallback request failed: {}", e)))?;
+
+                if !fallback_response.status().is_success() {
+                    let fallback_status = fallback_response.status();
+                    let fallback_error_text = fallback_response.text().await.unwrap_or_default();
+                    return Err(LlmError::Response(format!(
+                        "API error {}: {}; fallback without tools failed {}: {}",
+                        status, error_text, fallback_status, fallback_error_text
+                    )));
+                }
+
+                fallback_response
+            } else {
+                return Err(LlmError::Response(format!(
+                    "API error {}: {}",
+                    status, error_text
+                )));
+            }
+        } else {
+            response
+        };
 
         let stream = response
             .bytes_stream()

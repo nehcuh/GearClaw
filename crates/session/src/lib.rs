@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::path::PathBuf;
 use thiserror::Error;
+const MAX_SESSION_ID_LENGTH: usize = 128;
 
 #[derive(Debug, Error)]
 pub enum SessionError {
@@ -11,6 +12,8 @@ pub enum SessionError {
     Io(#[from] std::io::Error),
     #[error("json error: {0}")]
     Json(#[from] serde_json::Error),
+    #[error("invalid session id: {0}")]
+    InvalidSessionId(String),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -74,6 +77,7 @@ impl SessionManager {
         if !session_dir.exists() {
             std::fs::create_dir_all(&session_dir)?;
         }
+        let session_dir = std::fs::canonicalize(session_dir)?;
         Ok(Self { session_dir })
     }
 
@@ -97,7 +101,7 @@ impl SessionManager {
     }
 
     pub fn get_or_create_session(&self, id: &str) -> Result<Session, SessionError> {
-        let path = self.session_dir.join(format!("{}.json", id));
+        let path = self.session_file_path(id)?;
         if path.exists() {
             let content = std::fs::read_to_string(&path)?;
             let session: Session = serde_json::from_str(&content)?;
@@ -108,16 +112,68 @@ impl SessionManager {
     }
 
     pub async fn save_session(&self, session: &Session) -> Result<(), SessionError> {
-        let path = self.session_dir.join(format!("{}.json", session.id));
+        let path = self.session_file_path(&session.id)?;
         let content = serde_json::to_string_pretty(session)?;
         tokio::fs::write(path, content).await?;
         Ok(())
     }
 
     pub fn delete_session(&self, id: &str) -> Result<(), SessionError> {
-        let path = self.session_dir.join(format!("{}.json", id));
+        let path = self.session_file_path(id)?;
         if path.exists() {
             std::fs::remove_file(path)?;
+        }
+        Ok(())
+    }
+
+    fn session_file_path(&self, id: &str) -> Result<PathBuf, SessionError> {
+        Self::validate_session_id(id)?;
+        let path = self.session_dir.join(format!("{}.json", id));
+        if !path.starts_with(&self.session_dir) {
+            return Err(SessionError::InvalidSessionId(
+                "resolved path escapes session directory".to_string(),
+            ));
+        }
+        let parent = path.parent().ok_or_else(|| {
+            SessionError::InvalidSessionId("failed to resolve session file parent".to_string())
+        })?;
+        if parent != self.session_dir {
+            return Err(SessionError::InvalidSessionId(
+                "session id cannot include path separators".to_string(),
+            ));
+        }
+        Ok(path)
+    }
+
+    fn validate_session_id(id: &str) -> Result<(), SessionError> {
+        if id.trim().is_empty() {
+            return Err(SessionError::InvalidSessionId(
+                "session id cannot be empty".to_string(),
+            ));
+        }
+        if id.len() > MAX_SESSION_ID_LENGTH {
+            return Err(SessionError::InvalidSessionId(format!(
+                "session id too long (max {})",
+                MAX_SESSION_ID_LENGTH
+            )));
+        }
+        if id == "." || id == ".." || id.contains("..") {
+            return Err(SessionError::InvalidSessionId(
+                "session id cannot contain path traversal sequence".to_string(),
+            ));
+        }
+        if id.contains('/') || id.contains('\\') {
+            return Err(SessionError::InvalidSessionId(
+                "session id cannot contain path separators".to_string(),
+            ));
+        }
+        if !id
+            .chars()
+            .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_' | '.' | ':'))
+        {
+            return Err(SessionError::InvalidSessionId(
+                "session id contains unsupported characters".to_string(),
+            ));
         }
         Ok(())
     }

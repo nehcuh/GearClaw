@@ -107,6 +107,35 @@ impl DesktopApp {
                     ),
             )
             .child(
+                // Monitor button
+                div()
+                    .px(px(12.))
+                    .py(px(4.))
+                    .child(
+                        div()
+                            .id("monitor-btn")
+                            .px(px(12.))
+                            .py(px(6.))
+                            .rounded_md()
+                            .cursor_pointer()
+                            .text_sm()
+                            .text_color(text_muted_c)
+                            .hover(move |s: StyleRefinement| s.bg(sidebar_hover))
+                            .when(self.view_mode == ViewMode::Monitor, move |el: Stateful<Div>| {
+                                el.bg(sidebar_active_bg)
+                            })
+                            .child("🩺 Monitor")
+                            .on_click(cx.listener(|this, _event, _window, cx| {
+                                this.view_mode = if this.view_mode == ViewMode::Monitor {
+                                    ViewMode::Chat
+                                } else {
+                                    ViewMode::Monitor
+                                };
+                                cx.notify();
+                            })),
+                    ),
+            )
+            .child(
                 // Footer
                 div()
                     .p(px(12.))

@@ -12,7 +12,7 @@ use uuid::Uuid;
 
 pub struct MethodHandlers {
     /// Optional Agent reference (will be set by Gateway server)
-    agent: Arc<tokio::sync::Mutex<Option<Arc<gearclaw_core::Agent>>>>,
+    agent: Arc<tokio::sync::Mutex<Option<Arc<gearclaw_agent::Agent>>>>,
     /// Channel manager for routing messages to platforms
     channel_manager: Arc<tokio::sync::Mutex<ChannelManager>>,
     /// Agent trigger configuration
@@ -31,7 +31,7 @@ impl MethodHandlers {
     }
 
     /// Set agent reference
-    pub async fn set_agent(&self, agent: Arc<gearclaw_core::Agent>) {
+    pub async fn set_agent(&self, agent: Arc<gearclaw_agent::Agent>) {
         let mut agent_guard = self.agent.lock().await;
         *agent_guard = Some(agent);
     }
@@ -54,7 +54,7 @@ impl MethodHandlers {
     }
 
     /// Get agent reference (if configured)
-    pub async fn get_agent(&self) -> Option<Arc<gearclaw_core::Agent>> {
+    pub async fn get_agent(&self) -> Option<Arc<gearclaw_agent::Agent>> {
         let agent_guard = self.agent.lock().await;
         agent_guard.clone()
     }

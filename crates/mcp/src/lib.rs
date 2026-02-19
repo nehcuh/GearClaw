@@ -2,6 +2,13 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use thiserror::Error;
 use tracing::warn;
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum McpCapability {
+    Enabled,
+    Disabled,
+}
+
+pub const BUILD_MCP_CAPABILITY: McpCapability = McpCapability::Disabled;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct McpConfig {
@@ -51,6 +58,13 @@ impl McpManager {
     pub fn new(config: McpConfig) -> Self {
         Self { config }
     }
+    pub fn capability(&self) -> McpCapability {
+        BUILD_MCP_CAPABILITY
+    }
+
+    pub fn is_enabled(&self) -> bool {
+        matches!(self.capability(), McpCapability::Enabled)
+    }
 
     pub async fn init_clients(&self) -> Result<(), McpError> {
         if !self.config.servers.is_empty() {
@@ -75,5 +89,17 @@ impl McpManager {
             "MCP tool '{}' not available (MCP support disabled)",
             name
         )))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{McpCapability, McpConfig, McpManager};
+
+    #[test]
+    fn build_capability_is_explicitly_disabled() {
+        let manager = McpManager::new(McpConfig::default());
+        assert_eq!(manager.capability(), McpCapability::Disabled);
+        assert!(!manager.is_enabled());
     }
 }

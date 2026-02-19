@@ -15,3 +15,21 @@ fn session_manager_smoke_new() {
     let manager = SessionManager::new(temp.path().to_path_buf());
     assert!(manager.is_ok());
 }
+
+#[test]
+fn session_manager_rejects_path_traversal_id() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let manager = SessionManager::new(temp.path().to_path_buf()).expect("manager");
+    assert!(manager.get_or_create_session("../escape").is_err());
+    assert!(manager.get_or_create_session("..").is_err());
+    assert!(manager.get_or_create_session("bad/name").is_err());
+}
+
+#[test]
+fn session_manager_accepts_safe_channel_style_id() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let manager = SessionManager::new(temp.path().to_path_buf()).expect("manager");
+    let id = "discord:user:12345_abc-1.0";
+    let loaded = manager.get_or_create_session(id).expect("load");
+    assert_eq!(loaded.id, id);
+}
