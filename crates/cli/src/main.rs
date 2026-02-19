@@ -574,6 +574,7 @@ fn git_ref_exists(repo: &Path, revision: &str) -> Result<bool, GearClawError> {
     Ok(output.status == 0)
 }
 
+#[allow(clippy::too_many_arguments)]
 fn handle_list_audit(
     config: &Config,
     limit: usize,
@@ -1066,9 +1067,7 @@ fn sync_git_source(
         signature_verified = true;
     }
 
-    if did_network_update {
-        write_source_last_sync_epoch(&cache_dir, now_epoch_secs())?;
-    } else if source_last_sync_epoch(&cache_dir).is_none() {
+    if did_network_update || source_last_sync_epoch(&cache_dir).is_none() {
         write_source_last_sync_epoch(&cache_dir, now_epoch_secs())?;
     }
     let head_commit = git_head_commit(&cache_dir)?;
@@ -1227,12 +1226,11 @@ fn parse_skill_metadata(path: &Path) -> Result<(String, String), GearClawError> 
 
 fn parse_frontmatter_scalar(raw: &str) -> String {
     let raw = raw.trim();
-    if raw.len() >= 2 {
-        if (raw.starts_with('"') && raw.ends_with('"'))
-            || (raw.starts_with('\'') && raw.ends_with('\''))
-        {
-            return raw[1..raw.len() - 1].trim().to_string();
-        }
+    if raw.len() >= 2
+        && ((raw.starts_with('"') && raw.ends_with('"'))
+            || (raw.starts_with('\'') && raw.ends_with('\'')))
+    {
+        return raw[1..raw.len() - 1].trim().to_string();
     }
     raw.to_string()
 }
@@ -1408,7 +1406,7 @@ async fn handle_gateway(
         None
     };
 
-    if let Some(token) = discord_token.ok() {
+    if let Ok(token) = discord_token {
         println!("📱 Discord Bot Token 已设置");
         println!("   正在初始化 Discord 适配器...");
         println!();

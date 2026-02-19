@@ -25,11 +25,11 @@ pub fn should_trigger_agent(
     }
 
     // Check channel whitelist (if configured)
-    if !trigger_config.enabled_channels.is_empty() {
-        if !trigger_config.enabled_channels.contains(&channel_key) {
-            tracing::debug!("Message not in enabled_channels list: {}", channel_key);
-            return false;
-        }
+    if !trigger_config.enabled_channels.is_empty()
+        && !trigger_config.enabled_channels.contains(&channel_key)
+    {
+        tracing::debug!("Message not in enabled_channels list: {}", channel_key);
+        return false;
     }
 
     // Check trigger mode

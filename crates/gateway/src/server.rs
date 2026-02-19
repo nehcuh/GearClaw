@@ -379,21 +379,21 @@ async fn handle_connection(
                             tracing::debug!("Received message: {}", text);
 
                             // Parse frame
-                            if let Ok(frame) = serde_json::from_str::<GatewayFrame>(text) {
-                                if let GatewayFrame::Request(request) = frame {
-                                    // Handle request
-                                    let response = handle_request(
-                                        &request,
-                                        &handlers,
-                                        &auth,
-                                        allow_unauthenticated_requests,
-                                    )
-                                    .await;
+                            if let Ok(GatewayFrame::Request(request)) =
+                                serde_json::from_str::<GatewayFrame>(text)
+                            {
+                                // Handle request
+                                let response = handle_request(
+                                    &request,
+                                    &handlers,
+                                    &auth,
+                                    allow_unauthenticated_requests,
+                                )
+                                .await;
 
-                                    // Send response
-                                    let response_msg = serde_json::to_string(&response)?;
-                                    ws_sender.send(Message::Text(response_msg.into())).await?;
-                                }
+                                // Send response
+                                let response_msg = serde_json::to_string(&response)?;
+                                ws_sender.send(Message::Text(response_msg.into())).await?;
                             }
                         } else if msg.is_close() {
                             break;

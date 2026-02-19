@@ -1,8 +1,13 @@
 //! Input simulation (keyboard and mouse)
 
 use crate::error::GearClawError;
-use std::process::Command;
+use std::time::Duration;
+use tokio::process::Command;
+use tokio::time::timeout;
 
+const OSASCRIPT_TIMEOUT: Duration = Duration::from_secs(5);
+
+#[derive(Default)]
 pub struct InputSimulator;
 
 impl InputSimulator {
@@ -12,23 +17,28 @@ impl InputSimulator {
 
     /// Type text using keyboard simulation
     pub async fn type_text(&self, text: &str) -> Result<String, GearClawError> {
-        // Use AppleScript for text typing
         let script = format!(
             "tell application \"System Events\" to keystroke \"{}\"",
             text.replace('"', "\\\"")
         );
-
-        let output = Command::new("osascript")
-            .arg("-e")
-            .arg(&script)
-            .output()
+        let fut = Command::new("osascript").arg("-e").arg(&script).output();
+        let output = timeout(OSASCRIPT_TIMEOUT, fut)
+            .await
+            .map_err(|_| {
+                GearClawError::ToolExecutionError("ERROR:TIMEOUT: 键盘输入超时".to_string())
+            })?
             .map_err(|e| GearClawError::ToolExecutionError(format!("键盘输入失败: {}", e)))?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
+            if stderr.contains("not authorized") || stderr.contains("Not authorized") {
+                return Err(GearClawError::ToolExecutionError(
+                    "ERROR:PERMISSION_DENIED: 键盘输入需要辅助功能权限".to_string(),
+                ));
+            }
             return Err(GearClawError::ToolExecutionError(format!(
-                "键盘输入失败: {}",
-                stderr
+                "ERROR:SCRIPT_ERROR: {}",
+                stderr.trim()
             )));
         }
 
@@ -43,7 +53,7 @@ impl InputSimulator {
         let has_cmd = keys
             .iter()
             .any(|k| *k == "cmd" || *k == "command" || *k == "⌘");
-        let has_shift = keys.iter().any(|k| *k == "shift");
+        let has_shift = keys.contains(&"shift");
         let has_option = keys.iter().any(|k| *k == "option" || *k == "alt");
         let has_control = keys.iter().any(|k| *k == "control" || *k == "ctrl");
 
@@ -71,18 +81,24 @@ impl InputSimulator {
             "tell application \"System Events\" to key code {}{}",
             key_code, using_clause
         );
-
-        let output = Command::new("osascript")
-            .arg("-e")
-            .arg(&script)
-            .output()
+        let fut = Command::new("osascript").arg("-e").arg(&script).output();
+        let output = timeout(OSASCRIPT_TIMEOUT, fut)
+            .await
+            .map_err(|_| {
+                GearClawError::ToolExecutionError("ERROR:TIMEOUT: 按键组合超时".to_string())
+            })?
             .map_err(|e| GearClawError::ToolExecutionError(format!("按键组合失败: {}", e)))?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
+            if stderr.contains("not authorized") || stderr.contains("Not authorized") {
+                return Err(GearClawError::ToolExecutionError(
+                    "ERROR:PERMISSION_DENIED: 按键模拟需要辅助功能权限".to_string(),
+                ));
+            }
             return Err(GearClawError::ToolExecutionError(format!(
-                "按键组合失败: {}",
-                stderr
+                "ERROR:SCRIPT_ERROR: {}",
+                stderr.trim()
             )));
         }
 
@@ -133,24 +149,30 @@ impl InputSimulator {
         Ok(key_code.to_string())
     }
 
-    /// Click at current mouse position
-    pub async fn click(&self) -> Result<String, GearClawError> {
-        let script = "tell application \"System Events\" to click at {100, 100}";
-
-        let output = Command::new("osascript")
-            .arg("-e")
-            .arg(script)
-            .output()
+    /// Click at a specific coordinate (x, y)
+    ///
+    /// Note: coordinates are in screen points (0,0 is top-left).
+    pub async fn click_at(&self, x: i32, y: i32) -> Result<String, GearClawError> {
+        let script = format!(
+            "tell application \"System Events\" to click at {{{}, {}}}",
+            x, y
+        );
+        let fut = Command::new("osascript").arg("-e").arg(&script).output();
+        let output = timeout(OSASCRIPT_TIMEOUT, fut)
+            .await
+            .map_err(|_| {
+                GearClawError::ToolExecutionError("ERROR:TIMEOUT: 鼠标点击超时".to_string())
+            })?
             .map_err(|e| GearClawError::ToolExecutionError(format!("鼠标点击失败: {}", e)))?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
             return Err(GearClawError::ToolExecutionError(format!(
-                "鼠标点击失败: {}",
-                stderr
+                "ERROR:SCRIPT_ERROR: {}",
+                stderr.trim()
             )));
         }
 
-        Ok("✓ 已点击".to_string())
+        Ok(format!("✓ 已点击坐标 ({}, {})", x, y))
     }
 }

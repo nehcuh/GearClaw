@@ -242,9 +242,7 @@ impl LLMClient {
                             .filter(|c| !c.is_empty())
                             .map(|c| c.to_string());
 
-                        if content.is_none() {
-                            return None;
-                        }
+                        content.as_ref()?;
 
                         Some(Message {
                             role: m.role.clone(),

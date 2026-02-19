@@ -23,6 +23,12 @@ pub struct SkillManager {
     pub skills: Vec<Skill>,
 }
 
+impl Default for SkillManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl SkillManager {
     pub fn new() -> Self {
         Self { skills: Vec::new() }

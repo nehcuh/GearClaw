@@ -149,9 +149,8 @@ impl Agent {
 
     pub async fn start_interactive(&self) -> Result<(), GearClawError> {
         let mut session = self.session_manager.get_or_create_session("interactive")?;
-        let mut rl = Editor::<(), DefaultHistory>::new().map_err(|e| {
-            GearClawError::IoError(std::io::Error::new(std::io::ErrorKind::Other, e))
-        })?;
+        let mut rl = Editor::<(), DefaultHistory>::new()
+            .map_err(|e| GearClawError::IoError(std::io::Error::other(e)))?;
 
         println!("⚙️ GearClaw 交互模式已启动");
         println!("输入 'exit' 或 'quit' 退出");
@@ -832,10 +831,10 @@ impl Agent {
         }
 
         // Check enabled channels (whitelist)
-        if !trigger_config.enabled_channels.is_empty() {
-            if !trigger_config.enabled_channels.contains(&channel_key) {
-                return Ok(false);
-            }
+        if !trigger_config.enabled_channels.is_empty()
+            && !trigger_config.enabled_channels.contains(&channel_key)
+        {
+            return Ok(false);
         }
 
         // Check trigger mode

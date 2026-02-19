@@ -3,6 +3,7 @@
 use crate::error::GearClawError;
 use std::process::Command;
 
+#[derive(Default)]
 pub struct SystemControl;
 
 impl SystemControl {
