@@ -1,7 +1,7 @@
 [package]
 name = "gearclaw_channels"
 version = "0.1.0"
-edition = "2024"
+edition = "2021"
 
 [dependencies]
 gearclaw_core = { path = "../core" }
@@ -16,6 +16,7 @@ futures-util = "0.3"
 async-stream = "0.3"
 
 # Discord dependencies (twilight-rs)
-twilight-http = "0.17"
-twilight-model = "0.17"
-twilight-gateway = "0.17"
+# Note: 0.17 requires nightly Rust (edition 2024), using 0.16 for stable
+twilight-http = "0.16"
+twilight-model = "0.16"
+twilight-gateway = "0.16"

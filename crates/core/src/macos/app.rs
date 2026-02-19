@@ -18,15 +18,14 @@ impl AppManager {
             .arg("-a")
             .arg(app_name)
             .output()
-            .map_err(|e| GearClawError::ToolExecutionError(
-                format!("启动应用失败: {}", e)
-            ))?;
+            .map_err(|e| GearClawError::ToolExecutionError(format!("启动应用失败: {}", e)))?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(GearClawError::ToolExecutionError(
-                format!("启动应用 {} 失败: {}", app_name, stderr)
-            ));
+            return Err(GearClawError::ToolExecutionError(format!(
+                "启动应用 {} 失败: {}",
+                app_name, stderr
+            )));
         }
 
         Ok(format!("✓ 已启动应用: {}", app_name))
@@ -34,24 +33,20 @@ impl AppManager {
 
     /// Quit an application by name
     pub async fn quit(&self, app_name: &str) -> Result<String, GearClawError> {
-        let script = format!(
-            "tell application \"{}\" to quit",
-            app_name
-        );
+        let script = format!("tell application \"{}\" to quit", app_name);
 
         let output = Command::new("osascript")
             .arg("-e")
             .arg(&script)
             .output()
-            .map_err(|e| GearClawError::ToolExecutionError(
-                format!("退出应用失败: {}", e)
-            ))?;
+            .map_err(|e| GearClawError::ToolExecutionError(format!("退出应用失败: {}", e)))?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(GearClawError::ToolExecutionError(
-                format!("退出应用 {} 失败: {}", app_name, stderr)
-            ));
+            return Err(GearClawError::ToolExecutionError(format!(
+                "退出应用 {} 失败: {}",
+                app_name, stderr
+            )));
         }
 
         Ok(format!("✓ 已退出应用: {}", app_name))
@@ -59,24 +54,20 @@ impl AppManager {
 
     /// Bring application to front
     pub async fn bring_to_front(&self, app_name: &str) -> Result<String, GearClawError> {
-        let script = format!(
-            "tell application \"{}\" to activate",
-            app_name
-        );
+        let script = format!("tell application \"{}\" to activate", app_name);
 
         let output = Command::new("osascript")
             .arg("-e")
             .arg(&script)
             .output()
-            .map_err(|e| GearClawError::ToolExecutionError(
-                format!("切换应用失败: {}", e)
-            ))?;
+            .map_err(|e| GearClawError::ToolExecutionError(format!("切换应用失败: {}", e)))?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(GearClawError::ToolExecutionError(
-                format!("切换应用 {} 失败: {}", app_name, stderr)
-            ));
+            return Err(GearClawError::ToolExecutionError(format!(
+                "切换应用 {} 失败: {}",
+                app_name, stderr
+            )));
         }
 
         Ok(format!("✓ 已切换到前台: {}", app_name))
@@ -93,15 +84,14 @@ impl AppManager {
             .arg("-e")
             .arg(&script)
             .output()
-            .map_err(|e| GearClawError::ToolExecutionError(
-                format!("检查应用状态失败: {}", e)
-            ))?;
+            .map_err(|e| GearClawError::ToolExecutionError(format!("检查应用状态失败: {}", e)))?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(GearClawError::ToolExecutionError(
-                format!("检查应用 {} 失败: {}", app_name, stderr)
-            ));
+            return Err(GearClawError::ToolExecutionError(format!(
+                "检查应用 {} 失败: {}",
+                app_name, stderr
+            )));
         }
 
         let result_str = String::from_utf8_lossy(&output.stdout);
@@ -123,15 +113,14 @@ impl AppManager {
             .arg("-e")
             .arg(script)
             .output()
-            .map_err(|e| GearClawError::ToolExecutionError(
-                format!("获取应用列表失败: {}", e)
-            ))?;
+            .map_err(|e| GearClawError::ToolExecutionError(format!("获取应用列表失败: {}", e)))?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(GearClawError::ToolExecutionError(
-                format!("获取应用列表失败: {}", stderr)
-            ));
+            return Err(GearClawError::ToolExecutionError(format!(
+                "获取应用列表失败: {}",
+                stderr
+            )));
         }
 
         let result = String::from_utf8_lossy(&output.stdout);

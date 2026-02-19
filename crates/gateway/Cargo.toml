@@ -1,9 +1,10 @@
 [package]
 name = "gearclaw_gateway"
 version = "0.1.0"
-edition = "2024"
+edition = "2021"
 
 [dependencies]
+gearclaw_agent = { path = "../agent" }
 gearclaw_core = { path = "../core" }
 gearclaw_channels = { path = "../channels" }
 tokio = { version = "1.49", features = ["full"] }

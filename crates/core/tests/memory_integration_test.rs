@@ -19,16 +19,24 @@ async fn test_memory_integration() {
     writeln!(file, "# Test Document\n\n").unwrap();
     writeln!(file, "This is a test document for memory integration.\n\n").unwrap();
     writeln!(file, "## Important Information\n\n").unwrap();
-    writeln!(file, "The API key should be stored securely in environment variables.\n\n").unwrap();
+    writeln!(
+        file,
+        "The API key should be stored securely in environment variables.\n\n"
+    )
+    .unwrap();
     writeln!(file, "## Configuration\n\n").unwrap();
-    writeln!(file, "Configuration files are located in ~/.gearclaw/config.toml\n\n").unwrap();
+    writeln!(
+        file,
+        "Configuration files are located in ~/.gearclaw/config.toml\n\n"
+    )
+    .unwrap();
     file.flush().unwrap();
 
     println!("Created test file: {:?}", test_file);
 
     // Check for API key
-    let has_api_key = std::env::var("ANTHROPIC_API_KEY").is_ok()
-        || std::env::var("OPENAI_API_KEY").is_ok();
+    let has_api_key =
+        std::env::var("ANTHROPIC_API_KEY").is_ok() || std::env::var("OPENAI_API_KEY").is_ok();
 
     if !has_api_key {
         println!("⚠️  Skipping test: No API key found");

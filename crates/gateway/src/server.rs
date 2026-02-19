@@ -1,11 +1,11 @@
-use anyhow::{Context, Result};
-use std::sync::Arc;
-use tokio::sync::{RwLock, broadcast};
-use tokio_tungstenite::tungstenite::Message;
-use futures_util::{stream::StreamExt, sink::SinkExt};
-use crate::protocol::*;
-use crate::handlers::MethodHandlers;
 use crate::auth::TokenAuth;
+use crate::handlers::MethodHandlers;
+use crate::protocol::*;
+use anyhow::{Context, Result};
+use futures_util::{sink::SinkExt, stream::StreamExt};
+use std::sync::Arc;
+use tokio::sync::{broadcast, RwLock};
+use tokio_tungstenite::tungstenite::Message;
 
 /// Gateway configuration
 #[derive(Debug, Clone)]
@@ -13,6 +13,7 @@ pub struct GatewayConfig {
     pub host: String,
     pub port: u16,
     pub ws_path: String,
+    pub allow_unauthenticated_requests: bool,
 }
 
 impl Default for GatewayConfig {
@@ -21,8 +22,94 @@ impl Default for GatewayConfig {
             host: "127.0.0.1".to_string(),
             port: 18789,
             ws_path: "/ws".to_string(),
+            allow_unauthenticated_requests: false,
         }
     }
+}
+
+const MAX_SESSION_ID_LENGTH: usize = 128;
+
+fn validate_agent_session_id(session_id: &str) -> Result<(), ProtocolError> {
+    if session_id.trim().is_empty() {
+        return Err(ProtocolError::new(
+            ProtocolError::INVALID_REQUEST,
+            "Invalid session id: cannot be empty",
+        ));
+    }
+    if session_id.len() > MAX_SESSION_ID_LENGTH {
+        return Err(ProtocolError::new(
+            ProtocolError::INVALID_REQUEST,
+            format!(
+                "Invalid session id: too long (max {})",
+                MAX_SESSION_ID_LENGTH
+            ),
+        ));
+    }
+    if session_id == "." || session_id == ".." || session_id.contains("..") {
+        return Err(ProtocolError::new(
+            ProtocolError::INVALID_REQUEST,
+            "Invalid session id: path traversal sequence is not allowed",
+        ));
+    }
+    if session_id.contains('/') || session_id.contains('\\') {
+        return Err(ProtocolError::new(
+            ProtocolError::INVALID_REQUEST,
+            "Invalid session id: path separators are not allowed",
+        ));
+    }
+    if !session_id
+        .chars()
+        .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_' | '.' | ':'))
+    {
+        return Err(ProtocolError::new(
+            ProtocolError::INVALID_REQUEST,
+            "Invalid session id: contains unsupported characters",
+        ));
+    }
+    Ok(())
+}
+
+fn validate_request(request: &GatewayRequest) -> Result<(), ProtocolError> {
+    if request.id.trim().is_empty() {
+        return Err(ProtocolError::new(
+            ProtocolError::INVALID_REQUEST,
+            "Request id cannot be empty",
+        ));
+    }
+
+    if request.method == "agent" {
+        let session_id = request.device_id.as_deref().unwrap_or(request.id.as_str());
+        validate_agent_session_id(session_id)?;
+    }
+
+    Ok(())
+}
+
+async fn authorize_request(
+    auth: &TokenAuth,
+    request: &GatewayRequest,
+    allow_unauthenticated_requests: bool,
+) -> Result<(), ProtocolError> {
+    if allow_unauthenticated_requests {
+        return Ok(());
+    }
+
+    let token = request.signature.as_deref().ok_or_else(|| {
+        ProtocolError::new(
+            ProtocolError::UNAUTHORIZED,
+            "Authentication required: missing token signature",
+        )
+    })?;
+
+    if !auth.validate(token).await {
+        return Err(ProtocolError::new(
+            ProtocolError::UNAUTHORIZED,
+            "Invalid or expired token",
+        ));
+    }
+
+    auth.update_last_used(token).await;
+    Ok(())
 }
 
 /// Active connection information
@@ -111,8 +198,19 @@ impl GatewayServer {
                 let auth = self.auth.clone();
                 let connections = self.connections.clone();
                 let event_rx = self.event_tx.subscribe();
+                let allow_unauthenticated_requests = self.config.allow_unauthenticated_requests;
                 tokio::spawn(async move {
-                    if let Err(e) = handle_connection(stream, addr.to_string(), handlers, auth, connections, event_rx).await {
+                    if let Err(e) = handle_connection(
+                        stream,
+                        addr.to_string(),
+                        handlers,
+                        auth,
+                        connections,
+                        event_rx,
+                        allow_unauthenticated_requests,
+                    )
+                    .await
+                    {
                         tracing::error!("Connection error: {}", e);
                     }
                 });
@@ -134,7 +232,10 @@ impl GatewayServer {
             // Get list of registered platforms
             let platforms = {
                 let mgr = channel_manager.lock().await;
-                mgr.platforms().into_iter().map(|s| s.to_string()).collect::<Vec<_>>()
+                mgr.platforms()
+                    .into_iter()
+                    .map(|s| s.to_string())
+                    .collect::<Vec<_>>()
             };
 
             // Subscribe to messages from each platform
@@ -219,7 +320,9 @@ impl GatewayServer {
                                             &source_clone,
                                             &content_clone,
                                             channel_mgr,
-                                        ).await {
+                                        )
+                                        .await
+                                        {
                                             tracing::error!("Agent processing failed: {}", e);
                                         }
                                     });
@@ -245,6 +348,7 @@ async fn handle_connection(
     auth: Arc<TokenAuth>,
     _connections: Arc<RwLock<Vec<ActiveConnection>>>,
     mut event_rx: broadcast::Receiver<GatewayEvent>,
+    allow_unauthenticated_requests: bool,
 ) -> Result<()> {
     // Upgrade to WebSocket
     let ws_stream = tokio_tungstenite::accept_async(stream)
@@ -258,10 +362,8 @@ async fn handle_connection(
 
     // Send hello-ok
     let hello_payload = serde_json::to_value(create_hello_ok()).unwrap();
-    let hello_response = GatewayFrame::Response(GatewayResponse::ok(
-        "hello".to_string(),
-        hello_payload,
-    ));
+    let hello_response =
+        GatewayFrame::Response(GatewayResponse::ok("hello".to_string(), hello_payload));
     let hello_msg = serde_json::to_string(&hello_response)?;
     ws_sender.send(Message::Text(hello_msg.into())).await?;
 
@@ -280,7 +382,13 @@ async fn handle_connection(
                             if let Ok(frame) = serde_json::from_str::<GatewayFrame>(text) {
                                 if let GatewayFrame::Request(request) = frame {
                                     // Handle request
-                                    let response = handle_request(&request, &handlers, &auth, None).await;
+                                    let response = handle_request(
+                                        &request,
+                                        &handlers,
+                                        &auth,
+                                        allow_unauthenticated_requests,
+                                    )
+                                    .await;
 
                                     // Send response
                                     let response_msg = serde_json::to_string(&response)?;
@@ -330,16 +438,13 @@ async fn handle_request(
     request: &GatewayRequest,
     handlers: &MethodHandlers,
     auth: &TokenAuth,
-    _event_sender: Option<()>,
+    allow_unauthenticated_requests: bool,
 ) -> GatewayResponse {
-    // Validate token if present
-    if let Some(token) = &request.signature {
-        if !auth.validate(token).await {
-            return GatewayResponse::error(
-                request.id.clone(),
-                ProtocolError::new("UNAUTHORIZED", "Invalid or expired token"),
-            );
-        }
+    if let Err(error) = authorize_request(auth, request, allow_unauthenticated_requests).await {
+        return GatewayResponse::error(request.id.clone(), error);
+    }
+    if let Err(error) = validate_request(request) {
+        return GatewayResponse::error(request.id.clone(), error);
     }
 
     // Route to handler
@@ -362,7 +467,7 @@ async fn handle_request(
 
 /// Process message through Agent and send response back to channel
 async fn process_agent_response(
-    agent: Arc<gearclaw_core::Agent>,
+    agent: Arc<gearclaw_agent::Agent>,
     platform: &str,
     source: &ChannelSource,
     content: &str,
@@ -388,7 +493,8 @@ async fn process_agent_response(
     };
 
     // Get or create session
-    let mut session = agent.session_manager
+    let mut session = agent
+        .session_manager
         .get_or_create_session(&session_id)
         .map_err(|e| anyhow::anyhow!("Failed to get session: {}", e))?;
 
@@ -411,7 +517,10 @@ async fn process_agent_response(
         .map_err(|e| anyhow::anyhow!("Agent processing failed: {}", e))?;
 
     // Save session
-    agent.session_manager.save_session(&session).await
+    agent
+        .session_manager
+        .save_session(&session)
+        .await
         .map_err(|e| anyhow::anyhow!("Failed to save session: {}", e))?;
 
     // Extract the actual response (remove context prefix if present)
@@ -439,7 +548,9 @@ async fn process_agent_response(
             ChannelSource::Group { id, .. } => id.clone(),
         };
 
-        let target = adapter.resolve_target(&target_identifier).await
+        let target = adapter
+            .resolve_target(&target_identifier)
+            .await
             .map_err(|e| anyhow::anyhow!("Failed to resolve target: {}", e))?;
 
         let message_content = MessageContent {
@@ -447,7 +558,9 @@ async fn process_agent_response(
             embeds: vec![],
         };
 
-        adapter.send_message(target, message_content).await
+        adapter
+            .send_message(target, message_content)
+            .await
             .map_err(|e| anyhow::anyhow!("Failed to send agent response: {}", e))?;
 
         tracing::info!("Agent response sent to {}:{}", platform, target_identifier);
@@ -461,10 +574,7 @@ async fn process_agent_response(
 /// Create hello-ok payload
 fn create_hello_ok() -> HelloOkPayload {
     HelloOkPayload {
-        protocol: ProtocolVersion {
-            min: 1,
-            max: 1,
-        },
+        protocol: ProtocolVersion { min: 1, max: 1 },
         presence: vec![],
         health: serde_json::json!({
             "status": "ok",
@@ -476,9 +586,9 @@ fn create_hello_ok() -> HelloOkPayload {
         },
         uptime_ms: 0,
         policy: GatewayPolicy {
-            max_payload: 1024 * 1024, // 1MB
+            max_payload: 1024 * 1024,             // 1MB
             max_buffered_bytes: 10 * 1024 * 1024, // 10MB
-            tick_interval_ms: 30000, // 30 seconds
+            tick_interval_ms: 30000,              // 30 seconds
         },
     }
 }
@@ -486,6 +596,29 @@ fn create_hello_ok() -> HelloOkPayload {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::{json, Value};
+
+    fn health_request(signature: Option<&str>) -> GatewayRequest {
+        let mut request =
+            GatewayRequest::new("req-1".to_string(), "health".to_string(), Value::Null);
+        request.signature = signature.map(ToString::to_string);
+        request
+    }
+
+    fn agent_request(
+        request_id: &str,
+        signature: Option<&str>,
+        device_id: Option<&str>,
+    ) -> GatewayRequest {
+        let mut request = GatewayRequest::new(
+            request_id.to_string(),
+            "agent".to_string(),
+            json!({ "prompt": "hello" }),
+        );
+        request.signature = signature.map(ToString::to_string);
+        request.device_id = device_id.map(ToString::to_string);
+        request
+    }
 
     #[test]
     fn test_config_defaults() {
@@ -493,5 +626,110 @@ mod tests {
         assert_eq!(config.host, "127.0.0.1");
         assert_eq!(config.port, 18789);
         assert_eq!(config.ws_path, "/ws");
+        assert!(!config.allow_unauthenticated_requests);
+    }
+
+    #[tokio::test]
+    async fn test_handle_request_rejects_missing_signature() {
+        let handlers = MethodHandlers::new();
+        let auth = TokenAuth::new();
+        let request = health_request(None);
+
+        let response = handle_request(&request, &handlers, &auth, false).await;
+        assert!(!response.ok);
+        assert_eq!(
+            response.error.as_ref().map(|e| e.code.as_str()),
+            Some(ProtocolError::UNAUTHORIZED)
+        );
+    }
+
+    #[tokio::test]
+    async fn test_handle_request_rejects_invalid_signature() {
+        let handlers = MethodHandlers::new();
+        let auth = TokenAuth::new();
+        let request = health_request(Some("Bearer invalid-token"));
+
+        let response = handle_request(&request, &handlers, &auth, false).await;
+        assert!(!response.ok);
+        assert_eq!(
+            response.error.as_ref().map(|e| e.code.as_str()),
+            Some(ProtocolError::UNAUTHORIZED)
+        );
+    }
+
+    #[tokio::test]
+    async fn test_handle_request_accepts_valid_signature() {
+        let handlers = MethodHandlers::new();
+        let auth = TokenAuth::new();
+        let token = "test-token-abcdefghijklmnopqrstuvwxyz123456";
+        auth.register(
+            token.to_string(),
+            "device-1".to_string(),
+            "gateway".to_string(),
+        )
+        .await
+        .unwrap();
+
+        let request = health_request(Some(&format!("Bearer {}", token)));
+        let response = handle_request(&request, &handlers, &auth, false).await;
+        assert!(response.ok);
+    }
+
+    #[tokio::test]
+    async fn test_handle_request_bypass_when_allow_unauthenticated_enabled() {
+        let handlers = MethodHandlers::new();
+        let auth = TokenAuth::new();
+        let request = health_request(None);
+
+        let response = handle_request(&request, &handlers, &auth, true).await;
+        assert!(response.ok);
+    }
+
+    #[tokio::test]
+    async fn test_handle_request_rejects_invalid_agent_device_id() {
+        let handlers = MethodHandlers::new();
+        let auth = TokenAuth::new();
+        let token = "test-token-abcdefghijklmnopqrstuvwxyz123456";
+        auth.register(
+            token.to_string(),
+            "device-1".to_string(),
+            "gateway".to_string(),
+        )
+        .await
+        .unwrap();
+
+        let request = agent_request(
+            "req-1",
+            Some(&format!("Bearer {}", token)),
+            Some("../escape"),
+        );
+        let response = handle_request(&request, &handlers, &auth, false).await;
+        assert!(!response.ok);
+        assert_eq!(
+            response.error.as_ref().map(|e| e.code.as_str()),
+            Some(ProtocolError::INVALID_REQUEST)
+        );
+    }
+
+    #[tokio::test]
+    async fn test_handle_request_rejects_invalid_agent_request_id_when_no_device_id() {
+        let handlers = MethodHandlers::new();
+        let auth = TokenAuth::new();
+        let token = "test-token-abcdefghijklmnopqrstuvwxyz123456";
+        auth.register(
+            token.to_string(),
+            "device-1".to_string(),
+            "gateway".to_string(),
+        )
+        .await
+        .unwrap();
+
+        let request = agent_request("../escape", Some(&format!("Bearer {}", token)), None);
+        let response = handle_request(&request, &handlers, &auth, false).await;
+        assert!(!response.ok);
+        assert_eq!(
+            response.error.as_ref().map(|e| e.code.as_str()),
+            Some(ProtocolError::INVALID_REQUEST)
+        );
     }
 }

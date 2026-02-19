@@ -1,4 +1,4 @@
-use crate::config::{Config, default_endpoint};
+use crate::config::{default_endpoint, Config};
 use crate::error::GearClawError;
 use crate::llm::{FunctionCall, LLMClient, Message, ToolCall};
 use crate::mcp::McpManager;
@@ -7,9 +7,9 @@ use crate::session::{Session, SessionManager};
 use crate::skills::SkillManager;
 use crate::tools::{ToolExecutor, ToolResult};
 use futures::StreamExt;
-use rustyline::Editor;
 use rustyline::history::DefaultHistory;
-use serde_json::{Value, json};
+use rustyline::Editor;
+use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::io::Write;
 use std::sync::Arc;
@@ -23,6 +23,48 @@ pub struct Agent {
     pub skill_manager: SkillManager,
     pub memory_manager: MemoryManager,
     pub mcp_manager: Arc<McpManager>,
+}
+/// Tool routing abstraction for Agent tool-call dispatch.
+pub struct ToolRouter<'a> {
+    agent: &'a Agent,
+}
+
+impl<'a> ToolRouter<'a> {
+    pub fn new(agent: &'a Agent) -> Self {
+        Self { agent }
+    }
+
+    pub async fn route(
+        &self,
+        session: &mut Session,
+        tool_name: &str,
+        arguments: &str,
+    ) -> Result<ToolResult, GearClawError> {
+        self.agent
+            .execute_tool_call(session, tool_name, arguments)
+            .await
+    }
+}
+
+/// LLM loop abstraction for Agent multi-turn tool-calling orchestration.
+pub struct LLMLoop<'a> {
+    agent: &'a Agent,
+}
+
+impl<'a> LLMLoop<'a> {
+    pub fn new(agent: &'a Agent) -> Self {
+        Self { agent }
+    }
+
+    pub async fn run(
+        &self,
+        session: &mut Session,
+        user_message: &str,
+    ) -> Result<String, GearClawError> {
+        self.agent
+            .process_message_inner(session, user_message)
+            .await
+    }
 }
 
 impl Agent {
@@ -58,6 +100,7 @@ impl Agent {
             endpoint,
             config.llm.primary.clone(),
             config.llm.embedding_model.clone(),
+            config.llm.temperature,
         ));
 
         let tool_executor = ToolExecutor::new(&config.tools.security);
@@ -106,8 +149,9 @@ impl Agent {
 
     pub async fn start_interactive(&self) -> Result<(), GearClawError> {
         let mut session = self.session_manager.get_or_create_session("interactive")?;
-        let mut rl = Editor::<(), DefaultHistory>::new()
-            .map_err(|e| GearClawError::IoError(std::io::Error::new(std::io::ErrorKind::Other, e)))?;
+        let mut rl = Editor::<(), DefaultHistory>::new().map_err(|e| {
+            GearClawError::IoError(std::io::Error::new(std::io::ErrorKind::Other, e))
+        })?;
 
         println!("⚙️ GearClaw 交互模式已启动");
         println!("输入 'exit' 或 'quit' 退出");
@@ -173,6 +217,14 @@ impl Agent {
         session: &mut Session,
         user_message: &str,
     ) -> Result<String, GearClawError> {
+        LLMLoop::new(self).run(session, user_message).await
+    }
+
+    async fn process_message_inner(
+        &self,
+        session: &mut Session,
+        user_message: &str,
+    ) -> Result<String, GearClawError> {
         if !user_message.is_empty() {
             session.add_message(Message {
                 role: "user".to_string(),
@@ -190,8 +242,10 @@ impl Agent {
             loop_count += 1;
 
             let mut tool_specs = self.tool_executor.available_tools();
-            let mcp_tools = self.mcp_manager.list_tools().await;
-            tool_specs.extend(mcp_tools);
+            if self.mcp_manager.is_enabled() {
+                let mcp_tools = self.mcp_manager.list_tools().await;
+                tool_specs.extend(mcp_tools);
+            }
 
             let llm_tools = self.convert_to_llm_tools(tool_specs);
 
@@ -207,7 +261,8 @@ impl Agent {
                 match self.memory_manager.search(user_message, 3).await {
                     Ok(memories) if !memories.is_empty() => {
                         tracing::debug!("Found {} relevant memories", memories.len());
-                        let memory_context = memories.iter()
+                        let memory_context = memories
+                            .iter()
                             .map(|m| format!("- [{}] {} (score: {:.2})", m.path, m.text, m.score))
                             .collect::<Vec<_>>()
                             .join("\n");
@@ -332,11 +387,11 @@ impl Agent {
 
             // Execute tools
             println!();
+            let tool_router = ToolRouter::new(self);
             for tc in &tool_calls_vec {
                 info!("工具调用: {} - {}", tc.function.name, tc.function.arguments);
-
-                let result = self
-                    .execute_tool_call(session, &tc.function.name, &tc.function.arguments)
+                let result = tool_router
+                    .route(session, &tc.function.name, &tc.function.arguments)
                     .await;
 
                 let output = match result {
@@ -367,6 +422,16 @@ impl Agent {
 
         // Check if it's an MCP tool
         if tool_name.contains("__") {
+            if !self.mcp_manager.is_enabled() {
+                return Err(GearClawError::from(crate::error::DomainError::Mcp {
+                    server: tool_name
+                        .split("__")
+                        .next()
+                        .unwrap_or("unknown")
+                        .to_string(),
+                    reason: "MCP support is disabled in this build".to_string(),
+                }));
+            }
             return self.mcp_manager.call_tool(tool_name, args).await;
         }
 
@@ -653,7 +718,11 @@ impl Agent {
                 // Check if it's a macOS-specific tool
                 #[cfg(target_os = "macos")]
                 if tool_name.starts_with("macos_") {
-                    let output = self.tool_executor.macos.execute_tool(tool_name, &args).await?;
+                    let output = self
+                        .tool_executor
+                        .macos
+                        .execute_tool(tool_name, &args)
+                        .await?;
                     return Ok(ToolResult {
                         success: true,
                         output,

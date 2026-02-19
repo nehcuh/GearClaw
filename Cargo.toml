@@ -1,13 +1,18 @@
 [patch.crates-io]
 core-text = { path = "vendor/core-text-21.1.0/core-text-21.1.0" }
 
-
 [workspace]
 resolver = "2"
 members = [
     "crates/core",
+    "crates/agent",
+    "crates/llm",
+    "crates/tools",
+    "crates/session",
+    "crates/memory",
+    "crates/mcp",
     "crates/cli",
-    "crates/gui",
+    # "crates/gui",  # Temporarily excluded - gpui requires macOS and Xcode
     "crates/gateway",
     "crates/channels",
 ]

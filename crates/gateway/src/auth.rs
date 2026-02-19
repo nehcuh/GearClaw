@@ -25,6 +25,9 @@ pub struct TokenInfo {
 }
 
 impl TokenAuth {
+    fn normalize_token(token: &str) -> &str {
+        token.strip_prefix("Bearer ").unwrap_or(token)
+    }
     pub fn new() -> Self {
         Self {
             tokens: Arc::new(RwLock::new(HashMap::new())),
@@ -34,11 +37,7 @@ impl TokenAuth {
     /// Validate a token
     pub async fn validate(&self, token: &str) -> bool {
         // Check format: "Bearer <token>"
-        let token = if token.starts_with("Bearer ") {
-            &token[7..]
-        } else {
-            token
-        };
+        let token = Self::normalize_token(token);
 
         // Check length (should be at least 32 chars)
         if token.len() < 32 {
@@ -47,7 +46,10 @@ impl TokenAuth {
         };
 
         // Check format (alphanumeric with some special chars)
-        if !token.chars().all(|c| c.is_alphanumeric() || c == '-' || c == '_' || c == '.') {
+        if !token
+            .chars()
+            .all(|c| c.is_alphanumeric() || c == '-' || c == '_' || c == '.')
+        {
             tracing::warn!("Token validation failed: invalid characters");
             return false;
         }
@@ -69,11 +71,7 @@ impl TokenAuth {
     /// Register a new token
     pub async fn register(&self, token: String, device_id: String, mode: String) -> Result<()> {
         // Validate token format
-        let token = if token.starts_with("Bearer ") {
-            token[7..].to_string()
-        } else {
-            token
-        };
+        let token = Self::normalize_token(&token).to_string();
 
         if token.len() < 32 {
             return Err(anyhow::anyhow!("Token too short (min 32 chars)"));
@@ -93,22 +91,14 @@ impl TokenAuth {
 
     /// Get token info
     pub async fn get_token_info(&self, token: &str) -> Option<TokenInfo> {
-        let token = if token.starts_with("Bearer ") {
-            &token[7..]
-        } else {
-            token
-        };
+        let token = Self::normalize_token(token);
 
         self.tokens.read().await.get(token).cloned()
     }
 
     /// Update last used timestamp
     pub async fn update_last_used(&self, token: &str) {
-        let token = if token.starts_with("Bearer ") {
-            &token[7..]
-        } else {
-            token
-        };
+        let token = Self::normalize_token(token);
 
         if let Some(info) = self.tokens.write().await.get_mut(token) {
             info.last_used = Some(Utc::now());
@@ -117,11 +107,7 @@ impl TokenAuth {
 
     /// Revoke a token
     pub async fn revoke(&self, token: &str) -> Result<()> {
-        let token = if token.starts_with("Bearer ") {
-            &token[7..]
-        } else {
-            token
-        };
+        let token = Self::normalize_token(token);
 
         self.tokens.write().await.remove(token);
         tracing::info!("Token revoked successfully");
@@ -158,8 +144,14 @@ mod tests {
         .unwrap();
 
         // Validate it
-        assert!(auth.validate("test-token-abcdefghijklmnopqrstuvwxyz123456").await);
-        assert!(auth.validate("Bearer test-token-abcdefghijklmnopqrstuvwxyz123456").await);
+        assert!(
+            auth.validate("test-token-abcdefghijklmnopqrstuvwxyz123456")
+                .await
+        );
+        assert!(
+            auth.validate("Bearer test-token-abcdefghijklmnopqrstuvwxyz123456")
+                .await
+        );
     }
 
     #[tokio::test]
@@ -183,7 +175,11 @@ mod tests {
         let auth = TokenAuth::new();
 
         // Not registered
-        assert!(!auth.validate("not-registered-token-abcdefghijklmnopqrstuvwxyz").await);
+        assert!(
+            !auth
+                .validate("not-registered-token-abcdefghijklmnopqrstuvwxyz")
+                .await
+        );
     }
 
     #[tokio::test]
@@ -203,7 +199,9 @@ mod tests {
         assert_eq!(auth.token_count().await, 1);
 
         // Get token info
-        let info = auth.get_token_info("test-token-abcdefghijklmnopqrstuvwxyz123456").await;
+        let info = auth
+            .get_token_info("test-token-abcdefghijklmnopqrstuvwxyz123456")
+            .await;
         assert!(info.is_some());
         assert_eq!(info.unwrap().device_id, "device-1");
     }
@@ -222,10 +220,16 @@ mod tests {
         .unwrap();
 
         // Revoke it
-        auth.revoke("test-token-abcdefghijklmnopqrstuvwxyz123456").await.unwrap();
+        auth.revoke("test-token-abcdefghijklmnopqrstuvwxyz123456")
+            .await
+            .unwrap();
 
         // Should no longer be valid
-        assert!(!auth.validate("test-token-abcdefghijklmnopqrstuvwxyz123456").await);
+        assert!(
+            !auth
+                .validate("test-token-abcdefghijklmnopqrstuvwxyz123456")
+                .await
+        );
         assert_eq!(auth.token_count().await, 0);
     }
 }

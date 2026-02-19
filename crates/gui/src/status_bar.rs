@@ -24,6 +24,16 @@ impl DesktopApp {
             )
             .child(
                 div()
+                    .id("status-gateway")
+                    .child(format!("GW: {}", self.status_gateway)),
+            )
+            .child(
+                div()
+                    .id("status-llm")
+                    .child(format!("LLM: {}", self.status_llm)),
+            )
+            .child(
+                div()
                     .id("toggle-skills")
                     .cursor_pointer()
                     .hover(|s| s.opacity(0.8))

@@ -7,8 +7,8 @@
 // - Keywords
 // - Channel whitelist/blacklist
 
-use gearclaw_core::{AgentTriggerConfig, TriggerMode};
 use crate::protocol::ChannelSource;
+use gearclaw_core::{AgentTriggerConfig, TriggerMode};
 
 /// Check if a message should trigger Agent response
 pub fn should_trigger_agent(
@@ -46,9 +46,10 @@ pub fn should_trigger_agent(
         }
         TriggerMode::Keyword => {
             // Check if any keyword is in the message
-            trigger_config.keywords.iter().any(|keyword| {
-                content.to_lowercase().contains(&keyword.to_lowercase())
-            })
+            trigger_config
+                .keywords
+                .iter()
+                .any(|keyword| content.to_lowercase().contains(&keyword.to_lowercase()))
         }
     }
 }
@@ -63,7 +64,10 @@ fn get_channel_id(source: &ChannelSource) -> String {
 }
 
 /// Extract mention from message (e.g., "@agent help" -> "help")
-pub fn extract_mention_prefix(content: &str, trigger_config: &AgentTriggerConfig) -> Option<String> {
+pub fn extract_mention_prefix(
+    content: &str,
+    trigger_config: &AgentTriggerConfig,
+) -> Option<String> {
     if trigger_config.mode != TriggerMode::Mention {
         return None;
     }
@@ -105,16 +109,36 @@ mod tests {
         let mut config = default_trigger_config();
         config.mode = TriggerMode::Always;
 
-        assert!(should_trigger_agent("discord", &user_source(), "hello", &config));
+        assert!(should_trigger_agent(
+            "discord",
+            &user_source(),
+            "hello",
+            &config
+        ));
     }
 
     #[test]
     fn test_mention_mode_with_pattern() {
         let config = default_trigger_config(); // Default: Mention mode with @agent, @bot
 
-        assert!(should_trigger_agent("discord", &user_source(), "@agent hello", &config));
-        assert!(should_trigger_agent("discord", &user_source(), "@bot help", &config));
-        assert!(!should_trigger_agent("discord", &user_source(), "hello", &config));
+        assert!(should_trigger_agent(
+            "discord",
+            &user_source(),
+            "@agent hello",
+            &config
+        ));
+        assert!(should_trigger_agent(
+            "discord",
+            &user_source(),
+            "@bot help",
+            &config
+        ));
+        assert!(!should_trigger_agent(
+            "discord",
+            &user_source(),
+            "hello",
+            &config
+        ));
     }
 
     #[test]
@@ -123,9 +147,24 @@ mod tests {
         config.mode = TriggerMode::Keyword;
         config.keywords = vec!["help".to_string(), "error".to_string()];
 
-        assert!(should_trigger_agent("discord", &user_source(), "I need help", &config));
-        assert!(should_trigger_agent("discord", &user_source(), "There's an error", &config));
-        assert!(!should_trigger_agent("discord", &user_source(), "Hello world", &config));
+        assert!(should_trigger_agent(
+            "discord",
+            &user_source(),
+            "I need help",
+            &config
+        ));
+        assert!(should_trigger_agent(
+            "discord",
+            &user_source(),
+            "There's an error",
+            &config
+        ));
+        assert!(!should_trigger_agent(
+            "discord",
+            &user_source(),
+            "Hello world",
+            &config
+        ));
     }
 
     #[test]
@@ -134,7 +173,12 @@ mod tests {
         config.mode = TriggerMode::Always;
         config.disabled_channels = vec!["discord:123456".to_string()];
 
-        assert!(!should_trigger_agent("discord", &user_source(), "hello", &config));
+        assert!(!should_trigger_agent(
+            "discord",
+            &user_source(),
+            "hello",
+            &config
+        ));
     }
 
     #[test]
@@ -143,7 +187,12 @@ mod tests {
         config.mode = TriggerMode::Always;
         config.enabled_channels = vec!["discord:789012".to_string()];
 
-        assert!(!should_trigger_agent("discord", &user_source(), "hello", &config));
+        assert!(!should_trigger_agent(
+            "discord",
+            &user_source(),
+            "hello",
+            &config
+        ));
         assert!(should_trigger_agent(
             "discord",
             &ChannelSource::User {

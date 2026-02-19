@@ -2,10 +2,10 @@
 //
 // Tests MemoryManager creation and basic functionality without requiring API keys
 
+use gearclaw_core::config::MemoryConfig;
 use std::fs;
 use std::io::Write;
 use tempfile::TempDir;
-use gearclaw_core::config::MemoryConfig;
 
 #[tokio::test]
 async fn test_memory_manager_creation() {
@@ -102,7 +102,8 @@ async fn test_database_schema_creation() {
             size INTEGER NOT NULL
         )",
         [],
-    ).unwrap();
+    )
+    .unwrap();
 
     conn.execute(
         "CREATE TABLE IF NOT EXISTS chunks (
@@ -114,7 +115,8 @@ async fn test_database_schema_creation() {
             start_line INTEGER
         )",
         [],
-    ).unwrap();
+    )
+    .unwrap();
 
     // Verify tables exist
     let tables: Vec<String> = conn
@@ -137,7 +139,10 @@ fn test_chunking_logic() {
     let content = "# Header\n\nParagraph 1.\n\nParagraph 2.\n\nParagraph 3.";
 
     // Simple chunking by double newline
-    let chunks: Vec<&str> = content.split("\n\n").filter(|s| !s.trim().is_empty()).collect();
+    let chunks: Vec<&str> = content
+        .split("\n\n")
+        .filter(|s| !s.trim().is_empty())
+        .collect();
 
     assert_eq!(chunks.len(), 4);
     assert_eq!(chunks[0], "# Header");

@@ -6,12 +6,12 @@
 // 3. Agent processes incoming Discord messages
 // 4. Agent responses are sent back to Discord
 
-use gearclaw_gateway::GatewayServer;
-use gearclaw_gateway::GatewayConfig;
-use gearclaw_channels::{DiscordAdapter, ChannelAdapter};
-use gearclaw_core::{Agent, Config, AgentTriggerConfig, TriggerMode};
-use std::sync::Arc;
 use anyhow::Result;
+use gearclaw_channels::{ChannelAdapter, DiscordAdapter};
+use gearclaw_core::{Agent, AgentTriggerConfig, Config, TriggerMode};
+use gearclaw_gateway::GatewayConfig;
+use gearclaw_gateway::GatewayServer;
+use std::sync::Arc;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -27,20 +27,18 @@ async fn main() -> Result<()> {
 
     // Try to initialize Agent (if API key is configured)
     let agent = match Config::load(&None) {
-        Ok(config) => {
-            match Agent::new(config).await {
-                Ok(agent) => {
-                    tracing::info!("✅ Agent initialized successfully");
-                    tracing::info!("   - Messages from Discord will trigger Agent responses");
-                    Some(Arc::new(agent))
-                }
-                Err(e) => {
-                    tracing::warn!("⚠️  Failed to initialize Agent: {}", e);
-                    tracing::warn!("   - Discord messages will be broadcast but not processed");
-                    None
-                }
+        Ok(config) => match Agent::new(config).await {
+            Ok(agent) => {
+                tracing::info!("✅ Agent initialized successfully");
+                tracing::info!("   - Messages from Discord will trigger Agent responses");
+                Some(Arc::new(agent))
             }
-        }
+            Err(e) => {
+                tracing::warn!("⚠️  Failed to initialize Agent: {}", e);
+                tracing::warn!("   - Discord messages will be broadcast but not processed");
+                None
+            }
+        },
         Err(e) => {
             tracing::warn!("⚠️  Failed to load config: {}", e);
             tracing::warn!("   - Discord messages will be broadcast but not processed");
@@ -129,10 +127,16 @@ async fn main() -> Result<()> {
                 tracing::info!("   Agent: ✅ ACTIVE (responds to all messages)");
             }
             TriggerMode::Mention => {
-                tracing::info!("   Agent: ✅ ACTIVE (mention mode: {:?})", trigger_config.mention_patterns);
+                tracing::info!(
+                    "   Agent: ✅ ACTIVE (mention mode: {:?})",
+                    trigger_config.mention_patterns
+                );
             }
             TriggerMode::Keyword => {
-                tracing::info!("   Agent: ✅ ACTIVE (keyword mode: {:?})", trigger_config.keywords);
+                tracing::info!(
+                    "   Agent: ✅ ACTIVE (keyword mode: {:?})",
+                    trigger_config.keywords
+                );
             }
         }
         tracing::info!("   Discord Message → Agent → Discord Response (when triggered)");

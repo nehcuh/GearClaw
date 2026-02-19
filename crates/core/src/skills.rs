@@ -1,6 +1,6 @@
+use crate::error::GearClawError;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
-use crate::error::GearClawError;
 use tracing::{info, warn};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -37,7 +37,7 @@ impl SkillManager {
 
         info!("Loading skills from {:?}", dir);
         self.load_recursive(dir)?;
-        
+
         info!("Loaded {} skills", self.skills.len());
         Ok(())
     }
@@ -69,30 +69,37 @@ impl SkillManager {
 
     fn load_skill(&mut self, path: &Path) -> Result<(), GearClawError> {
         let content = std::fs::read_to_string(path).map_err(GearClawError::IoError)?;
-        
+
         // Parse frontmatter
         let parts: Vec<&str> = content.splitn(3, "---").collect();
         if parts.len() < 3 {
             // Try to be more robust if the file starts with --- immediately
             if content.starts_with("---") {
-                 // splitn might have behaved differently depending on if there is text before the first ---
-                 // If file starts with ---, splitn(3, "---") -> ["", "frontmatter", "body"]
+                // splitn might have behaved differently depending on if there is text before the first ---
+                // If file starts with ---, splitn(3, "---") -> ["", "frontmatter", "body"]
             } else {
-                return Err(GearClawError::ConfigParseError(format!("Invalid skill file format in {:?}: missing frontmatter", path)));
+                return Err(GearClawError::ConfigParseError(format!(
+                    "Invalid skill file format in {:?}: missing frontmatter",
+                    path
+                )));
             }
         }
-        
+
         // Check if the first part is empty (standard frontmatter)
         let (frontmatter, instructions) = if parts[0].trim().is_empty() {
-             (parts[1], parts[2])
+            (parts[1], parts[2])
         } else {
-             // Maybe the file doesn't start with ---?
-             // But valid frontmatter usually starts with ---
-             return Err(GearClawError::ConfigParseError(format!("Invalid skill file format in {:?}: content before frontmatter", path)));
+            // Maybe the file doesn't start with ---?
+            // But valid frontmatter usually starts with ---
+            return Err(GearClawError::ConfigParseError(format!(
+                "Invalid skill file format in {:?}: content before frontmatter",
+                path
+            )));
         };
 
-        let meta: SkillMetadata = serde_yml::from_str(frontmatter)
-            .map_err(|e| GearClawError::ConfigParseError(format!("Invalid skill metadata in {:?}: {}", path, e)))?;
+        let meta: SkillMetadata = serde_yml::from_str(frontmatter).map_err(|e| {
+            GearClawError::ConfigParseError(format!("Invalid skill metadata in {:?}: {}", path, e))
+        })?;
 
         let skill = Skill {
             name: meta.name,

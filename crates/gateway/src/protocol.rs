@@ -227,24 +227,15 @@ pub struct AgentEvent {
 pub enum AgentEventContent {
     /// Tool execution started
     #[serde(rename = "tool.start")]
-    ToolStart {
-        tool: String,
-        params: JsonValue,
-    },
+    ToolStart { tool: String, params: JsonValue },
 
     /// Tool execution progress update
     #[serde(rename = "tool.progress")]
-    ToolProgress {
-        tool: String,
-        progress: JsonValue,
-    },
+    ToolProgress { tool: String, progress: JsonValue },
 
     /// Tool execution completed
     #[serde(rename = "tool.end")]
-    ToolEnd {
-        tool: String,
-        result: JsonValue,
-    },
+    ToolEnd { tool: String, result: JsonValue },
 
     /// Agent output (streamed response chunks)
     #[serde(rename = "output")]
@@ -439,24 +430,24 @@ mod tests {
 
     #[test]
     fn test_request_serialization() {
-        let req = GatewayRequest::new(
-            "test-1".to_string(),
-            "health".to_string(),
-            JsonValue::Null,
-        )
-        .with_sequence(1);
+        let req = GatewayRequest::new("test-1".to_string(), "health".to_string(), JsonValue::Null)
+            .with_sequence(1);
 
-        let json = serde_json::to_string(&req).unwrap();
-        assert!(json.contains("\"type\":\"req\""));
-        assert!(json.contains("\"method\":\"health\""));
+        // Test GatewayRequest serialization (without frame wrapper)
+        let req_json = serde_json::to_string(&req).unwrap();
+        assert!(req_json.contains("\"method\":\"health\""));
+        assert!(req_json.contains("\"id\":\"test-1\""));
+
+        // Test GatewayFrame::Request serialization (with frame wrapper)
+        let frame = GatewayFrame::Request(req);
+        let frame_json = serde_json::to_string(&frame).unwrap();
+        assert!(frame_json.contains("\"type\":\"req\""));
+        assert!(frame_json.contains("\"method\":\"health\""));
     }
 
     #[test]
     fn test_response_ok() {
-        let res = GatewayResponse::ok(
-            "test-1".to_string(),
-            json!({"status": "ok"}),
-        );
+        let res = GatewayResponse::ok("test-1".to_string(), json!({"status": "ok"}));
 
         let json = serde_json::to_string(&res).unwrap();
         assert!(json.contains("\"ok\":true"));

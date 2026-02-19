@@ -43,115 +43,114 @@ impl MacosController {
     }
 
     /// Execute a macOS-specific tool by name
-    pub async fn execute_tool(&self, tool_name: &str, args: &Value) -> Result<String, GearClawError> {
+    pub async fn execute_tool(
+        &self,
+        tool_name: &str,
+        args: &Value,
+    ) -> Result<String, GearClawError> {
         match tool_name {
             "macos_launch_app" => {
-                let app_name = args["app_name"]
-                    .as_str()
-                    .ok_or_else(|| GearClawError::ToolExecutionError("缺少 app_name 参数".to_string()))?;
+                let app_name = args["app_name"].as_str().ok_or_else(|| {
+                    GearClawError::ToolExecutionError("缺少 app_name 参数".to_string())
+                })?;
                 self.app.launch(app_name).await
             }
 
             "macos_quit_app" => {
-                let app_name = args["app_name"]
-                    .as_str()
-                    .ok_or_else(|| GearClawError::ToolExecutionError("缺少 app_name 参数".to_string()))?;
+                let app_name = args["app_name"].as_str().ok_or_else(|| {
+                    GearClawError::ToolExecutionError("缺少 app_name 参数".to_string())
+                })?;
                 self.app.quit(app_name).await
             }
 
             "macos_bring_to_front" => {
-                let app_name = args["app_name"]
-                    .as_str()
-                    .ok_or_else(|| GearClawError::ToolExecutionError("缺少 app_name 参数".to_string()))?;
+                let app_name = args["app_name"].as_str().ok_or_else(|| {
+                    GearClawError::ToolExecutionError("缺少 app_name 参数".to_string())
+                })?;
                 self.app.bring_to_front(app_name).await
             }
 
             "macos_is_running" => {
-                let app_name = args["app_name"]
-                    .as_str()
-                    .ok_or_else(|| GearClawError::ToolExecutionError("缺少 app_name 参数".to_string()))?;
+                let app_name = args["app_name"].as_str().ok_or_else(|| {
+                    GearClawError::ToolExecutionError("缺少 app_name 参数".to_string())
+                })?;
                 self.app.is_running(app_name).await
             }
 
             "macos_applescript" => {
-                let script = args["script"]
-                    .as_str()
-                    .ok_or_else(|| GearClawError::ToolExecutionError("缺少 script 参数".to_string()))?;
+                let script = args["script"].as_str().ok_or_else(|| {
+                    GearClawError::ToolExecutionError("缺少 script 参数".to_string())
+                })?;
                 self.script.execute(script).await
             }
 
             "macos_jxa" => {
-                let script = args["script"]
-                    .as_str()
-                    .ok_or_else(|| GearClawError::ToolExecutionError("缺少 script 参数".to_string()))?;
+                let script = args["script"].as_str().ok_or_else(|| {
+                    GearClawError::ToolExecutionError("缺少 script 参数".to_string())
+                })?;
                 self.script.execute_jxa(script).await
             }
 
             "macos_type_text" => {
-                let text = args["text"]
-                    .as_str()
-                    .ok_or_else(|| GearClawError::ToolExecutionError("缺少 text 参数".to_string()))?;
+                let text = args["text"].as_str().ok_or_else(|| {
+                    GearClawError::ToolExecutionError("缺少 text 参数".to_string())
+                })?;
                 self.input.type_text(text).await
             }
 
             "macos_key_combo" => {
-                let keys = args["keys"]
-                    .as_array()
-                    .ok_or_else(|| GearClawError::ToolExecutionError("keys 必须是数组".to_string()))?;
-                let key_strs: Vec<&str> = keys.iter()
-                    .filter_map(|k| k.as_str())
-                    .collect();
+                let keys = args["keys"].as_array().ok_or_else(|| {
+                    GearClawError::ToolExecutionError("keys 必须是数组".to_string())
+                })?;
+                let key_strs: Vec<&str> = keys.iter().filter_map(|k| k.as_str()).collect();
                 self.input.key_combo(&key_strs).await
             }
 
-            "macos_clipboard_read" => {
-                self.clipboard.read().await
-            }
+            "macos_clipboard_read" => self.clipboard.read().await,
 
             "macos_clipboard_write" => {
-                let text = args["text"]
-                    .as_str()
-                    .ok_or_else(|| GearClawError::ToolExecutionError("缺少 text 参数".to_string()))?;
+                let text = args["text"].as_str().ok_or_else(|| {
+                    GearClawError::ToolExecutionError("缺少 text 参数".to_string())
+                })?;
                 self.clipboard.write(text).await
             }
 
             "macos_notify" => {
-                let title = args["title"]
-                    .as_str()
-                    .unwrap_or("GearClaw");
-                let message = args["message"]
-                    .as_str()
-                    .ok_or_else(|| GearClawError::ToolExecutionError("缺少 message 参数".to_string()))?;
+                let title = args["title"].as_str().unwrap_or("GearClaw");
+                let message = args["message"].as_str().ok_or_else(|| {
+                    GearClawError::ToolExecutionError("缺少 message 参数".to_string())
+                })?;
                 let sound = args["sound"].as_bool().unwrap_or(false);
                 self.notification.send(title, message, sound).await
             }
 
             "macos_open_url" => {
-                let url = args["url"]
-                    .as_str()
-                    .ok_or_else(|| GearClawError::ToolExecutionError("缺少 url 参数".to_string()))?;
+                let url = args["url"].as_str().ok_or_else(|| {
+                    GearClawError::ToolExecutionError("缺少 url 参数".to_string())
+                })?;
                 self.system.open_url(url).await
             }
 
             "macos_search_in_browser" => {
-                let query = args["query"]
-                    .as_str()
-                    .ok_or_else(|| GearClawError::ToolExecutionError("缺少 query 参数".to_string()))?;
+                let query = args["query"].as_str().ok_or_else(|| {
+                    GearClawError::ToolExecutionError("缺少 query 参数".to_string())
+                })?;
                 self.system.search_in_browser(query).await
             }
 
             "macos_say" => {
-                let text = args["text"]
-                    .as_str()
-                    .ok_or_else(|| GearClawError::ToolExecutionError("缺少 text 参数".to_string()))?;
+                let text = args["text"].as_str().ok_or_else(|| {
+                    GearClawError::ToolExecutionError("缺少 text 参数".to_string())
+                })?;
                 let voice = args["voice"].as_str();
                 let rate = args["rate"].as_u64().unwrap_or(175);
                 self.system.say(text, voice, rate).await
             }
 
-            _ => Err(GearClawError::ToolExecutionError(
-                format!("未知的 macOS 工具: {}", tool_name)
-            )),
+            _ => Err(GearClawError::ToolExecutionError(format!(
+                "未知的 macOS 工具: {}",
+                tool_name
+            ))),
         }
     }
 
@@ -170,7 +169,6 @@ impl MacosController {
                     "required": ["app_name"]
                 }
             }),
-
             json!({
                 "name": "macos_quit_app",
                 "description": "退出 macOS 应用程序",
@@ -182,7 +180,6 @@ impl MacosController {
                     "required": ["app_name"]
                 }
             }),
-
             json!({
                 "name": "macos_bring_to_front",
                 "description": "将应用程序切换到前台",
@@ -194,7 +191,6 @@ impl MacosController {
                     "required": ["app_name"]
                 }
             }),
-
             json!({
                 "name": "macos_is_running",
                 "description": "检查应用是否正在运行",
@@ -206,7 +202,6 @@ impl MacosController {
                     "required": ["app_name"]
                 }
             }),
-
             // Script execution
             json!({
                 "name": "macos_applescript",
@@ -219,7 +214,6 @@ impl MacosController {
                     "required": ["script"]
                 }
             }),
-
             json!({
                 "name": "macos_jxa",
                 "description": "执行 JavaScript for Automation (JXA) 代码",
@@ -231,7 +225,6 @@ impl MacosController {
                     "required": ["script"]
                 }
             }),
-
             // Input simulation
             json!({
                 "name": "macos_type_text",
@@ -244,7 +237,6 @@ impl MacosController {
                     "required": ["text"]
                 }
             }),
-
             json!({
                 "name": "macos_key_combo",
                 "description": "模拟组合键 (如 cmd+c, cmd+v)",
@@ -260,7 +252,6 @@ impl MacosController {
                     "required": ["keys"]
                 }
             }),
-
             // Clipboard
             json!({
                 "name": "macos_clipboard_read",
@@ -271,7 +262,6 @@ impl MacosController {
                     "required": []
                 }
             }),
-
             json!({
                 "name": "macos_clipboard_write",
                 "description": "写入剪贴板内容",
@@ -283,7 +273,6 @@ impl MacosController {
                     "required": ["text"]
                 }
             }),
-
             // Notifications
             json!({
                 "name": "macos_notify",
@@ -298,7 +287,6 @@ impl MacosController {
                     "required": ["message"]
                 }
             }),
-
             // System
             json!({
                 "name": "macos_open_url",
@@ -311,7 +299,6 @@ impl MacosController {
                     "required": ["url"]
                 }
             }),
-
             json!({
                 "name": "macos_search_in_browser",
                 "description": "在浏览器中执行搜索（打开 Google 搜索页面）",
@@ -323,7 +310,6 @@ impl MacosController {
                     "required": ["query"]
                 }
             }),
-
             json!({
                 "name": "macos_say",
                 "description": "文字转语音 (TTS)",

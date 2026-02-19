@@ -1,12 +1,13 @@
 use std::collections::HashMap;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 
 use gpui::prelude::FluentBuilder;
 use gpui::*;
 
 use gearclaw_core::config::Config;
 
+use crate::multiline_input::MultiLineTextInput;
 use crate::text_input::TextInput;
 use crate::theme;
 
@@ -15,6 +16,7 @@ use crate::theme;
 pub enum ViewMode {
     Chat,
     Settings,
+    Monitor,
 }
 
 /// A single chat message displayed in the UI.
@@ -22,6 +24,34 @@ pub enum ViewMode {
 pub struct ChatMessage {
     pub role: String, // "user", "assistant", "error"
     pub content: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LogLevelFilter {
+    All,
+    Info,
+    Warn,
+    Error,
+}
+
+impl LogLevelFilter {
+    pub fn next(self) -> Self {
+        match self {
+            LogLevelFilter::All => LogLevelFilter::Info,
+            LogLevelFilter::Info => LogLevelFilter::Warn,
+            LogLevelFilter::Warn => LogLevelFilter::Error,
+            LogLevelFilter::Error => LogLevelFilter::All,
+        }
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            LogLevelFilter::All => "All",
+            LogLevelFilter::Info => "Info",
+            LogLevelFilter::Warn => "Warn",
+            LogLevelFilter::Error => "Error",
+        }
+    }
 }
 
 // Application-level actions
@@ -40,6 +70,7 @@ pub struct DesktopApp {
     pub scroll_handle: ScrollHandle,
     pub is_loading: bool,
     pub cancel_flag: Arc<AtomicBool>,
+    pub runtime: Arc<tokio::runtime::Runtime>,
     pub view_mode: ViewMode,
     pub window_title: String,
     pub show_logs: bool,
@@ -49,6 +80,28 @@ pub struct DesktopApp {
     pub setting_api_key: Entity<TextInput>,
     pub setting_model: Entity<TextInput>,
     pub setting_embedding: Entity<TextInput>,
+    pub setting_temperature: Entity<TextInput>,
+    pub setting_session_max_tokens: Entity<TextInput>,
+    pub setting_agent_name: Entity<TextInput>,
+    pub setting_system_prompt: Entity<MultiLineTextInput>,
+    pub setting_tools_security: Entity<TextInput>,
+    pub setting_tools_profile: Entity<TextInput>,
+    pub setting_memory_enabled: Entity<TextInput>,
+    pub setting_memory_db_path: Entity<TextInput>,
+    pub setting_session_dir: Entity<TextInput>,
+    pub setting_session_save_interval: Entity<TextInput>,
+
+    // Log filters
+    pub log_filter: Entity<TextInput>,
+    pub log_level_filter: LogLevelFilter,
+
+    // Status indicators
+    pub status_gateway: String,
+    pub status_channels: String,
+    pub status_llm: String,
+    pub status_memory: String,
+    pub status_mcp: String,
+    pub status_updated_at: Option<String>,
 
     // Toggles
     pub skills_on: bool,
@@ -59,24 +112,30 @@ pub struct DesktopApp {
 impl DesktopApp {
     pub fn new(cx: &mut Context<Self>) -> Self {
         let input = cx.new(|cx| TextInput::new("Type a message...", cx));
+        let runtime = Arc::new(
+            tokio::runtime::Runtime::new()
+                .expect("Failed to initialize shared Tokio runtime for GUI"),
+        );
 
-        // Load existing config to pre-fill settings, or use defaults
-        let (endpoint, api_key, model, embedding) = match Config::load(&None) {
-            Ok(config) => (
-                config.llm.endpoint.clone(),
-                config.llm.api_key.clone().unwrap_or_default(),
-                config.llm.primary.clone(),
-                config.llm.embedding_model.clone(),
-            ),
-            Err(_) => (
-                "http://localhost:1234/v1".to_string(),
-                String::new(),
-                "gpt-4".to_string(),
-                "text-embedding-3-small".to_string(),
-            ),
+        let (config, config_exists) = match Config::load(&None) {
+            Ok(config) => (config, true),
+            Err(_) => (Config::sample(), false),
         };
 
-        let config_exists = Config::load(&None).is_ok();
+        let endpoint = config.llm.endpoint.clone();
+        let api_key = config.llm.api_key.clone().unwrap_or_default();
+        let model = config.llm.primary.clone();
+        let embedding = config.llm.embedding_model.clone();
+        let temperature = config.llm.temperature.unwrap_or(0.7);
+        let session_max_tokens = config.session.max_tokens;
+        let agent_name = config.agent.name.clone();
+        let system_prompt = config.agent.system_prompt.clone();
+        let tools_security = config.tools.security.clone();
+        let tools_profile = config.tools.profile.clone();
+        let memory_enabled = config.memory.enabled;
+        let memory_db_path = config.memory.db_path.to_string_lossy().to_string();
+        let session_dir = config.session.session_dir.to_string_lossy().to_string();
+        let session_save_interval = config.session.save_interval;
 
         let setting_endpoint = cx.new(|cx| {
             let mut ti = TextInput::new("Endpoint URL", cx);
@@ -98,7 +157,57 @@ impl DesktopApp {
             ti.set_content(&embedding, cx);
             ti
         });
-
+        let setting_temperature = cx.new(|cx| {
+            let mut ti = TextInput::new("Temperature (e.g. 0.7)", cx);
+            ti.set_content(&format!("{:.2}", temperature), cx);
+            ti
+        });
+        let setting_session_max_tokens = cx.new(|cx| {
+            let mut ti = TextInput::new("Max tokens (session)", cx);
+            ti.set_content(&session_max_tokens.to_string(), cx);
+            ti
+        });
+        let setting_agent_name = cx.new(|cx| {
+            let mut ti = TextInput::new("Agent name", cx);
+            ti.set_content(&agent_name, cx);
+            ti
+        });
+        let setting_system_prompt = cx.new(|cx| {
+            let mut ti = MultiLineTextInput::new("System prompt", cx);
+            ti.set_content(&system_prompt, cx);
+            ti
+        });
+        let setting_tools_security = cx.new(|cx| {
+            let mut ti = TextInput::new("Tools security (deny/allowlist/full)", cx);
+            ti.set_content(&tools_security, cx);
+            ti
+        });
+        let setting_tools_profile = cx.new(|cx| {
+            let mut ti = TextInput::new("Tools profile (minimal/coding/messaging/full)", cx);
+            ti.set_content(&tools_profile, cx);
+            ti
+        });
+        let setting_memory_enabled = cx.new(|cx| {
+            let mut ti = TextInput::new("Memory enabled (true/false)", cx);
+            ti.set_content(if memory_enabled { "true" } else { "false" }, cx);
+            ti
+        });
+        let setting_memory_db_path = cx.new(|cx| {
+            let mut ti = TextInput::new("Memory DB path", cx);
+            ti.set_content(&memory_db_path, cx);
+            ti
+        });
+        let setting_session_dir = cx.new(|cx| {
+            let mut ti = TextInput::new("Session directory", cx);
+            ti.set_content(&session_dir, cx);
+            ti
+        });
+        let setting_session_save_interval = cx.new(|cx| {
+            let mut ti = TextInput::new("Save interval (seconds)", cx);
+            ti.set_content(&session_save_interval.to_string(), cx);
+            ti
+        });
+        let log_filter = cx.new(|cx| TextInput::new("Filter logs...", cx));
         DesktopApp {
             messages: Vec::new(),
             session_messages: HashMap::new(),
@@ -109,6 +218,7 @@ impl DesktopApp {
             scroll_handle: ScrollHandle::new(),
             is_loading: false,
             cancel_flag: Arc::new(AtomicBool::new(false)),
+            runtime,
             view_mode: if config_exists {
                 ViewMode::Chat
             } else {
@@ -120,6 +230,24 @@ impl DesktopApp {
             setting_api_key,
             setting_model,
             setting_embedding,
+            setting_temperature,
+            setting_session_max_tokens,
+            setting_agent_name,
+            setting_system_prompt,
+            setting_tools_security,
+            setting_tools_profile,
+            setting_memory_enabled,
+            setting_memory_db_path,
+            setting_session_dir,
+            setting_session_save_interval,
+            log_filter,
+            log_level_filter: LogLevelFilter::All,
+            status_gateway: "Unknown".to_string(),
+            status_channels: "Unknown".to_string(),
+            status_llm: "Unknown".to_string(),
+            status_memory: "Unknown".to_string(),
+            status_mcp: "Unknown".to_string(),
+            status_updated_at: None,
             skills_on: true,
             memory_on: true,
             security_full: true,
@@ -152,6 +280,11 @@ impl DesktopApp {
             self.view_mode = ViewMode::Chat;
             cx.notify();
         }
+    }
+
+    pub fn refresh_status(&mut self, cx: &mut Context<Self>) {
+        self.status_updated_at = Some(chrono::Local::now().format("%H:%M:%S").to_string());
+        cx.notify();
     }
 
     pub fn on_send(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -199,13 +332,15 @@ impl DesktopApp {
 
         // Spawn background thread with its own Tokio runtime for network I/O
         let cancel_flag = self.cancel_flag.clone();
+        let runtime = self.runtime.clone();
         let task = cx.background_spawn({
             let cancel_flag = cancel_flag.clone();
+            let runtime = runtime.clone();
             async move {
-                // reqwest needs a Tokio runtime; GPUI uses its own executor
-                let rt = tokio::runtime::Runtime::new()
-                    .map_err(|e| format!("Failed to create runtime: {}", e))?;
-                rt.block_on(Self::run_agent(content, cancel_flag))
+                let join_handle = runtime.spawn(Self::run_agent(content, cancel_flag));
+                join_handle
+                    .await
+                    .map_err(|e| format!("Agent task join error: {}", e))?
             }
         });
 
@@ -291,7 +426,7 @@ impl DesktopApp {
         user_message: String,
         cancel_flag: Arc<AtomicBool>,
     ) -> Result<String, String> {
-        use gearclaw_core::agent::Agent;
+        use gearclaw_agent::Agent;
         use gearclaw_core::session::Session;
 
         // Load config and create Agent
@@ -342,6 +477,13 @@ impl Render for DesktopApp {
                 .min_h(px(0.0))
                 .bg(theme::bg(cx))
                 .child(self.render_settings(cx)),
+            ViewMode::Monitor => div()
+                .flex()
+                .flex_col()
+                .flex_grow()
+                .min_h(px(0.0))
+                .bg(theme::bg(cx))
+                .child(self.render_monitor(cx)),
         };
 
         let show_logs = self.show_logs;

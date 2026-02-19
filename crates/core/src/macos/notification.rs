@@ -11,7 +11,12 @@ impl NotificationSender {
     }
 
     /// Send a macOS notification
-    pub async fn send(&self, title: &str, message: &str, sound: bool) -> Result<String, GearClawError> {
+    pub async fn send(
+        &self,
+        title: &str,
+        message: &str,
+        sound: bool,
+    ) -> Result<String, GearClawError> {
         // Use osascript to send notification
         let sound_option = if sound { "sound name \"Glass\"" } else { "" };
 
@@ -26,15 +31,14 @@ impl NotificationSender {
             .arg("-e")
             .arg(&script)
             .output()
-            .map_err(|e| GearClawError::ToolExecutionError(
-                format!("发送通知失败: {}", e)
-            ))?;
+            .map_err(|e| GearClawError::ToolExecutionError(format!("发送通知失败: {}", e)))?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(GearClawError::ToolExecutionError(
-                format!("发送通知失败: {}", stderr)
-            ));
+            return Err(GearClawError::ToolExecutionError(format!(
+                "发送通知失败: {}",
+                stderr
+            )));
         }
 
         Ok(format!("✓ 已发送通知: {}", message))

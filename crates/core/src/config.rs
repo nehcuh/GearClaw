@@ -1,309 +1,35 @@
+//! GearClaw Configuration
+//!
+//! This module defines the configuration structures with proper defaults
+//! using derive macros and serde attributes for cleaner code.
+
 use crate::error::GearClawError;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::path::PathBuf;
 
-use std::collections::HashMap;
+// ============================================================================
+// Constants
+// ============================================================================
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Config {
-    /// LLM provider configuration
-    pub llm: LLMConfig,
-
-    /// Tool configuration
-    pub tools: ToolsConfig,
-
-    /// Session configuration
-    pub session: SessionConfig,
-
-    /// Agent configuration
-    pub agent: AgentConfig,
-
-    /// Memory configuration
-    #[serde(default = "default_memory_config")]
-    pub memory: MemoryConfig,
-
-    /// MCP configuration
-    #[serde(default = "default_mcp_config")]
-    pub mcp: McpConfig,
-
-    /// Gateway configuration
-    #[serde(default = "default_gateway_config")]
-    pub gateway: GatewayConfig,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct McpConfig {
-    #[serde(default)]
-    pub servers: HashMap<String, McpServerConfig>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct McpServerConfig {
-    pub command: String,
-    #[serde(default)]
-    pub args: Vec<String>,
-    #[serde(default)]
-    pub env: HashMap<String, String>,
-}
-
-fn default_mcp_config() -> McpConfig {
-    McpConfig {
-        servers: HashMap::new(),
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct MemoryConfig {
-    #[serde(default)]
-    pub enabled: bool,
-    #[serde(default = "default_memory_db_path")]
-    pub db_path: PathBuf,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GatewayConfig {
-    /// Gateway host
-    #[serde(default = "default_gateway_host")]
-    pub host: String,
-
-    /// Gateway port
-    #[serde(default = "default_gateway_port")]
-    pub port: u16,
-
-    /// WebSocket path
-    #[serde(default = "default_gateway_path")]
-    pub ws_path: String,
-
-    /// Device key path
-    #[serde(default = "default_device_key_path")]
-    pub device_key_path: PathBuf,
-
-    /// Auto-start on boot
-    #[serde(default)]
-    pub auto_start: bool,
-
-    /// Enable TLS
-    #[serde(default)]
-    pub tls_enabled: bool,
-
-    /// TLS certificate path
-    #[serde(default)]
-    pub tls_cert_path: Option<PathBuf>,
-
-    /// TLS key path
-    #[serde(default)]
-    pub tls_key_path: Option<PathBuf>,
-}
-
-fn default_gateway_config() -> GatewayConfig {
-    GatewayConfig {
-        host: default_gateway_host(),
-        port: default_gateway_port(),
-        ws_path: default_gateway_path(),
-        device_key_path: default_device_key_path(),
-        auto_start: false,
-        tls_enabled: false,
-        tls_cert_path: None,
-        tls_key_path: None,
-    }
-}
-
-fn default_gateway_host() -> String {
-    "127.0.0.1".to_string()
-}
-
-fn default_gateway_port() -> u16 {
-    18789
-}
-
-fn default_gateway_path() -> String {
-    "/ws".to_string()
-}
-
-fn default_device_key_path() -> PathBuf {
-    dirs::home_dir()
-        .unwrap()
-        .join(".gearclaw/device.key")
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct LLMConfig {
-    /// Primary model (e.g., "openai/gpt-4", "zai/glm-4.7")
-    pub primary: String,
-
-    /// Fallback models
-    #[serde(default)]
-    pub fallbacks: Vec<String>,
-
-    /// API endpoint
-    #[serde(default = "default_endpoint")]
-    pub endpoint: String,
-
-    /// API key (optional, can be loaded from env)
-    #[serde(default)]
-    pub api_key: Option<String>,
-
-    /// Embedding model
-    #[serde(default = "default_embedding_model")]
-    pub embedding_model: String,
-}
-
-fn default_embedding_model() -> String {
-    "embedding-3".to_string()
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ToolsConfig {
-    /// Tool security level: deny, allowlist, full
-    #[serde(default = "default_security")]
-    pub security: String,
-
-    /// Exec host: gateway, sandbox, node
-    #[serde(default = "default_host")]
-    pub host: String,
-
-    /// Enable elevated tools
-    #[serde(default)]
-    pub elevated_enabled: bool,
-
-    /// Tool profile: minimal, coding, messaging, full
-    #[serde(default = "default_profile")]
-    pub profile: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SessionConfig {
-    /// Session directory
-    pub session_dir: PathBuf,
-
-    /// Auto-save interval in seconds
-    #[serde(default = "default_save_interval")]
-    pub save_interval: u64,
-
-    /// Maximum context tokens
-    #[serde(default = "default_max_tokens")]
-    pub max_tokens: usize,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct AgentConfig {
-    /// Agent name
-    #[serde(default = "default_agent_name")]
-    pub name: String,
-
-    /// System prompt
-    #[serde(default = "default_system_prompt")]
-    pub system_prompt: String,
-
-    /// Workspace directory
-    pub workspace: PathBuf,
-
-    /// Enable memory search
-    #[serde(default)]
-    pub memory_enabled: bool,
-
-    /// Skills directory
-    #[serde(default = "default_skills_path")]
-    pub skills_path: PathBuf,
-
-    /// Channel trigger configuration
-    #[serde(default)]
-    pub triggers: AgentTriggerConfig,
-}
-
-/// Agent trigger configuration for channel messages
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct AgentTriggerConfig {
-    /// Trigger mode: always, mention, or keyword
-    #[serde(default = "default_trigger_mode")]
-    pub mode: TriggerMode,
-
-    /// Mention patterns (e.g., ["@agent", "@bot", "!ai"])
-    #[serde(default)]
-    pub mention_patterns: Vec<String>,
-
-    /// Keywords that trigger the agent (for keyword mode)
-    #[serde(default)]
-    pub keywords: Vec<String>,
-
-    /// Whitelist: only respond in these channels (format: "platform:channel_id")
-    #[serde(default)]
-    pub enabled_channels: Vec<String>,
-
-    /// Blacklist: never respond in these channels (format: "platform:channel_id")
-    #[serde(default)]
-    pub disabled_channels: Vec<String>,
-}
-
-/// Trigger mode for agent responses
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(rename_all = "lowercase")]
-pub enum TriggerMode {
-    /// Respond to all messages
-    Always,
-    /// Only respond when mentioned
-    Mention,
-    /// Only respond when keywords are matched
-    Keyword,
-}
-
-impl Default for TriggerMode {
-    fn default() -> Self {
-        TriggerMode::Mention
-    }
-}
-
-impl Default for AgentTriggerConfig {
-    fn default() -> Self {
-        Self {
-            mode: TriggerMode::Mention,
-            mention_patterns: vec!["@agent".to_string(), "@bot".to_string()],
-            keywords: vec![],
-            enabled_channels: vec![],
-            disabled_channels: vec![],
-        }
-    }
-}
-
-fn default_trigger_mode() -> TriggerMode {
-    TriggerMode::Mention
-}
-
-fn default_skills_path() -> PathBuf {
-    dirs::home_dir().unwrap().join(".gearclaw/skills")
-}
-
-pub fn default_endpoint() -> String {
-    "https://api.openai.com/v1".to_string()
-}
-
-fn default_security() -> String {
-    "full".to_string()
-}
-
-fn default_host() -> String {
-    "gateway".to_string()
-}
-
-fn default_profile() -> String {
-    "full".to_string()
-}
-
-fn default_save_interval() -> u64 {
-    60
-}
-
-fn default_max_tokens() -> usize {
-    200000
-}
-
-fn default_agent_name() -> String {
-    "GearClaw".to_string()
-}
-
-fn default_system_prompt() -> String {
-    r#"
-你是一个智能 AI 助手，名叫 GearClaw 🦞。
+/// Default OpenAI-compatible API endpoint
+pub const DEFAULT_ENDPOINT: &str = "https://api.openai.com/v1";
+/// Default embedding model
+pub const DEFAULT_EMBEDDING_MODEL: &str = "embedding-3";
+/// Default gateway host
+pub const DEFAULT_GATEWAY_HOST: &str = "127.0.0.1";
+/// Default gateway port
+pub const DEFAULT_GATEWAY_PORT: u16 = 18789;
+/// Default WebSocket path
+pub const DEFAULT_WS_PATH: &str = "/ws";
+/// Default session save interval (seconds)
+pub const DEFAULT_SAVE_INTERVAL: u64 = 60;
+/// Default max context tokens
+pub const DEFAULT_MAX_TOKENS: usize = 200000;
+/// Default agent name
+pub const DEFAULT_AGENT_NAME: &str = "GearClaw";
+/// Default system prompt
+pub const DEFAULT_SYSTEM_PROMPT: &str = r#"你是一个智能 AI 助手，名叫 GearClaw 🫞。
 
 你的目标是帮助用户完成任务。你可以：
 - 使用工具执行命令（在安全允许的范围内）
@@ -311,65 +37,582 @@ fn default_system_prompt() -> String {
 - 管理会话上下文
 - 提供编程帮助、调试、代码审查
 
-请用友好、简洁的方式与用户交流。如果有不确定的地方，询问用户。
-"#
-    .trim()
-    .to_string()
+请用友好、简洁的方式与用户交流。如果有不确定的地方，询问用户。"#;
+
+// ============================================================================
+// Helper functions for paths (required for serde defaults)
+// ============================================================================
+
+fn home_dir() -> PathBuf {
+    dirs::home_dir().unwrap_or_else(|| PathBuf::from("."))
 }
 
-fn default_memory_config() -> MemoryConfig {
-    MemoryConfig {
-        enabled: true,
-        db_path: default_memory_db_path(),
+fn default_gearclaw_dir() -> PathBuf {
+    home_dir().join(".gearclaw")
+}
+
+// ============================================================================
+// Main Config
+// ============================================================================
+
+/// Main configuration structure
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Config {
+    /// LLM provider configuration
+    pub llm: LLMConfig,
+    /// Tool configuration
+    pub tools: ToolsConfig,
+    /// Session configuration
+    pub session: SessionConfig,
+    /// Agent configuration
+    pub agent: AgentConfig,
+    /// Memory configuration
+    #[serde(default)]
+    pub memory: MemoryConfig,
+    /// MCP configuration
+    #[serde(default)]
+    pub mcp: McpConfig,
+    /// Gateway configuration
+    #[serde(default)]
+    pub gateway: GatewayConfig,
+}
+
+// ============================================================================
+// LLM Config
+// ============================================================================
+
+/// LLM provider configuration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LLMConfig {
+    /// Primary model (e.g., "openai/gpt-4", "zai/glm-4.7")
+    pub primary: String,
+    /// Fallback models
+    #[serde(default)]
+    pub fallbacks: Vec<String>,
+    /// API endpoint
+    #[serde(default = "LLMConfig::default_endpoint")]
+    pub endpoint: String,
+    /// API key (optional, can be loaded from env)
+    #[serde(default)]
+    pub api_key: Option<String>,
+    /// Embedding model
+    #[serde(default = "LLMConfig::default_embedding_model")]
+    pub embedding_model: String,
+    /// Temperature (sampling)
+    #[serde(default = "LLMConfig::default_temperature")]
+    pub temperature: Option<f32>,
+}
+
+impl LLMConfig {
+    fn default_endpoint() -> String {
+        DEFAULT_ENDPOINT.to_string()
+    }
+    fn default_embedding_model() -> String {
+        DEFAULT_EMBEDDING_MODEL.to_string()
+    }
+    fn default_temperature() -> Option<f32> {
+        Some(0.7)
     }
 }
 
-fn default_memory_db_path() -> PathBuf {
-    dirs::home_dir()
-        .unwrap()
-        .join(".gearclaw/memory/index.sqlite")
+impl Default for LLMConfig {
+    fn default() -> Self {
+        Self {
+            primary: "gpt-4".to_string(),
+            fallbacks: vec![],
+            endpoint: DEFAULT_ENDPOINT.to_string(),
+            api_key: None,
+            embedding_model: DEFAULT_EMBEDDING_MODEL.to_string(),
+            temperature: Some(0.7),
+        }
+    }
 }
 
-impl Config {
-    pub fn load(path: &Option<String>) -> Result<Self, GearClawError> {
-        let config_path = if let Some(p) = path {
-            PathBuf::from(p)
-        } else {
-            // Default locations
-            let default_paths = vec![
-                dirs::home_dir().map(|h| h.join(".gearclaw/config.toml")),
-                dirs::config_dir().map(|c| c.join("gearclaw.toml")),
-                Some(PathBuf::from("./gearclaw.toml")),
-            ];
+// ============================================================================
+// Tools Config
+// ============================================================================
 
-            default_paths
-                .into_iter()
-                .flatten()
-                .find(|p| p.exists())
-                .ok_or_else(|| GearClawError::ConfigNotFound(
-                    "未找到配置文件。请运行 `gearclaw init` 进行初始化，或手动创建 ~/.gearclaw/config.toml".to_string()
-                ))?
-        };
+/// Tool execution configuration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ToolsConfig {
+    /// Tool security level: deny, allowlist, full
+    #[serde(default = "ToolsConfig::default_security")]
+    pub security: String,
+    /// Exec host: gateway, sandbox, node
+    #[serde(default = "ToolsConfig::default_host")]
+    pub host: String,
+    /// Enable elevated tools
+    #[serde(default)]
+    pub elevated_enabled: bool,
+    /// Tool profile: minimal, coding, messaging, full
+    #[serde(default = "ToolsConfig::default_profile")]
+    pub profile: String,
+}
 
+impl ToolsConfig {
+    fn default_security() -> String {
+        "full".to_string()
+    }
+    fn default_host() -> String {
+        "gateway".to_string()
+    }
+    fn default_profile() -> String {
+        "full".to_string()
+    }
+}
+
+impl Default for ToolsConfig {
+    fn default() -> Self {
+        Self {
+            security: "full".to_string(),
+            host: "gateway".to_string(),
+            elevated_enabled: false,
+            profile: "full".to_string(),
+        }
+    }
+}
+
+// ============================================================================
+// Session Config
+// ============================================================================
+
+/// Session persistence configuration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SessionConfig {
+    /// Session directory
+    #[serde(default = "SessionConfig::default_session_dir")]
+    pub session_dir: PathBuf,
+    /// Auto-save interval in seconds
+    #[serde(default = "SessionConfig::default_save_interval")]
+    pub save_interval: u64,
+    /// Maximum context tokens
+    #[serde(default = "SessionConfig::default_max_tokens")]
+    pub max_tokens: usize,
+}
+
+impl SessionConfig {
+    fn default_session_dir() -> PathBuf {
+        default_gearclaw_dir().join("sessions")
+    }
+    fn default_save_interval() -> u64 {
+        DEFAULT_SAVE_INTERVAL
+    }
+    fn default_max_tokens() -> usize {
+        DEFAULT_MAX_TOKENS
+    }
+}
+
+impl Default for SessionConfig {
+    fn default() -> Self {
+        Self {
+            session_dir: Self::default_session_dir(),
+            save_interval: DEFAULT_SAVE_INTERVAL,
+            max_tokens: DEFAULT_MAX_TOKENS,
+        }
+    }
+}
+
+// ============================================================================
+// Agent Config
+// ============================================================================
+
+/// Agent behavior configuration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentConfig {
+    /// Agent name
+    #[serde(default = "AgentConfig::default_name")]
+    pub name: String,
+    /// System prompt
+    #[serde(default = "AgentConfig::default_system_prompt")]
+    pub system_prompt: String,
+    /// Workspace directory
+    #[serde(default = "AgentConfig::default_workspace")]
+    pub workspace: PathBuf,
+    /// Enable memory search
+    #[serde(default)]
+    pub memory_enabled: bool,
+    /// Skills directory
+    #[serde(default = "AgentConfig::default_skills_path")]
+    pub skills_path: PathBuf,
+    /// Skill source cache TTL (seconds) for git_repo synchronization
+    #[serde(default = "AgentConfig::default_skill_source_cache_ttl_seconds")]
+    pub skill_source_cache_ttl_seconds: u64,
+    /// Skill search/install sources
+    #[serde(default)]
+    pub skill_sources: Vec<SkillSourceConfig>,
+    /// Skill installation trust policy
+    #[serde(default)]
+    pub skill_trust_policy: SkillTrustPolicy,
+    /// Channel trigger configuration
+    #[serde(default)]
+    pub triggers: AgentTriggerConfig,
+}
+
+impl AgentConfig {
+    fn default_name() -> String {
+        DEFAULT_AGENT_NAME.to_string()
+    }
+    fn default_system_prompt() -> String {
+        DEFAULT_SYSTEM_PROMPT.to_string()
+    }
+    fn default_workspace() -> PathBuf {
+        default_gearclaw_dir().join("workspace")
+    }
+    fn default_skills_path() -> PathBuf {
+        default_gearclaw_dir().join("skills")
+    }
+    fn default_skill_source_cache_ttl_seconds() -> u64 {
+        300
+    }
+}
+
+impl Default for AgentConfig {
+    fn default() -> Self {
+        Self {
+            name: DEFAULT_AGENT_NAME.to_string(),
+            system_prompt: DEFAULT_SYSTEM_PROMPT.to_string(),
+            workspace: Self::default_workspace(),
+            memory_enabled: false,
+            skills_path: Self::default_skills_path(),
+            skill_source_cache_ttl_seconds: Self::default_skill_source_cache_ttl_seconds(),
+            skill_sources: vec![],
+            skill_trust_policy: SkillTrustPolicy::default(),
+            triggers: AgentTriggerConfig::default(),
+        }
+    }
+}
+
+/// Skill source kind
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum SkillSourceKind {
+    /// Local directory containing skill folders (each folder contains SKILL.md)
+    #[default]
+    LocalDir,
+    /// Git repository containing skill folders (each folder contains SKILL.md)
+    GitRepo,
+}
+
+/// Skill source configuration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SkillSourceConfig {
+    /// Source name (for display and filtering)
+    pub name: String,
+    /// Source kind
+    #[serde(default)]
+    pub kind: SkillSourceKind,
+    /// Location (path for local_dir, git URL/path for git_repo)
+    pub location: String,
+    /// Optional revision pin (branch/tag/commit) for git_repo
+    #[serde(default)]
+    pub revision: Option<String>,
+    /// Whether this source is enabled
+    #[serde(default = "SkillSourceConfig::default_enabled")]
+    pub enabled: bool,
+    /// Whether this source is trusted
+    #[serde(default)]
+    pub trusted: bool,
+    /// Require `git verify-commit HEAD` after sync (git_repo only)
+    #[serde(default)]
+    pub verify_head_commit_signature: bool,
+}
+
+impl SkillSourceConfig {
+    fn default_enabled() -> bool {
+        true
+    }
+}
+
+/// Skill installation trust policy
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum SkillTrustPolicy {
+    /// Allow installing only local directory sources
+    #[default]
+    LocalOnly,
+    /// Allow installing only explicitly trusted sources
+    TrustedOnly,
+    /// Allow all configured sources (unsafe)
+    AllowUntrusted,
+}
+
+// ============================================================================
+// Agent Trigger Config
+// ============================================================================
+
+/// Trigger mode for agent responses
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum TriggerMode {
+    /// Respond to all messages
+    Always,
+    /// Only respond when mentioned
+    #[default]
+    Mention,
+    /// Only respond when keywords are matched
+    Keyword,
+}
+
+/// Agent trigger configuration for channel messages
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentTriggerConfig {
+    /// Trigger mode: always, mention, or keyword
+    #[serde(default)]
+    pub mode: TriggerMode,
+    /// Mention patterns (e.g., ["@agent", "@bot", "!ai"])
+    #[serde(default = "AgentTriggerConfig::default_mention_patterns")]
+    pub mention_patterns: Vec<String>,
+    /// Keywords that trigger the agent (for keyword mode)
+    #[serde(default)]
+    pub keywords: Vec<String>,
+    /// Whitelist: only respond in these channels (format: "platform:channel_id")
+    #[serde(default)]
+    pub enabled_channels: Vec<String>,
+    /// Blacklist: never respond in these channels (format: "platform:channel_id")
+    #[serde(default)]
+    pub disabled_channels: Vec<String>,
+}
+
+impl AgentTriggerConfig {
+    fn default_mention_patterns() -> Vec<String> {
+        vec!["@agent".to_string(), "@bot".to_string()]
+    }
+}
+
+impl Default for AgentTriggerConfig {
+    fn default() -> Self {
+        Self {
+            mode: TriggerMode::Mention,
+            mention_patterns: Self::default_mention_patterns(),
+            keywords: vec![],
+            enabled_channels: vec![],
+            disabled_channels: vec![],
+        }
+    }
+}
+
+// ============================================================================
+// Memory Config
+// ============================================================================
+
+/// Memory/embedding configuration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MemoryConfig {
+    /// Enable memory system
+    #[serde(default = "MemoryConfig::default_enabled")]
+    pub enabled: bool,
+    /// Database path for embeddings
+    #[serde(default = "MemoryConfig::default_db_path")]
+    pub db_path: PathBuf,
+}
+
+impl MemoryConfig {
+    fn default_enabled() -> bool {
+        true
+    }
+    fn default_db_path() -> PathBuf {
+        default_gearclaw_dir().join("memory/index.sqlite")
+    }
+}
+
+impl Default for MemoryConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            db_path: Self::default_db_path(),
+        }
+    }
+}
+
+// ============================================================================
+// MCP Config
+// ============================================================================
+
+/// MCP (Model Context Protocol) configuration
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct McpConfig {
+    /// MCP server configurations
+    #[serde(default)]
+    pub servers: HashMap<String, McpServerConfig>,
+}
+
+/// Individual MCP server configuration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct McpServerConfig {
+    /// Command to execute
+    pub command: String,
+    /// Command arguments
+    #[serde(default)]
+    pub args: Vec<String>,
+    /// Environment variables
+    #[serde(default)]
+    pub env: HashMap<String, String>,
+}
+
+// ============================================================================
+// Gateway Config
+// ============================================================================
+
+/// Gateway server configuration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GatewayConfig {
+    /// Gateway host
+    #[serde(default = "GatewayConfig::default_host")]
+    pub host: String,
+    /// Gateway port
+    #[serde(default = "GatewayConfig::default_port")]
+    pub port: u16,
+    /// WebSocket path
+    #[serde(default = "GatewayConfig::default_ws_path")]
+    pub ws_path: String,
+    /// Allow unauthenticated requests (dangerous, dev-only)
+    #[serde(default)]
+    pub allow_unauthenticated_requests: bool,
+    /// Device key path
+    #[serde(default = "GatewayConfig::default_device_key_path")]
+    pub device_key_path: PathBuf,
+    /// Auto-start on boot
+    #[serde(default)]
+    pub auto_start: bool,
+    /// Enable TLS
+    #[serde(default)]
+    pub tls_enabled: bool,
+    /// TLS certificate path
+    #[serde(default)]
+    pub tls_cert_path: Option<PathBuf>,
+    /// TLS key path
+    #[serde(default)]
+    pub tls_key_path: Option<PathBuf>,
+}
+
+impl GatewayConfig {
+    fn default_host() -> String {
+        DEFAULT_GATEWAY_HOST.to_string()
+    }
+    fn default_port() -> u16 {
+        DEFAULT_GATEWAY_PORT
+    }
+    fn default_ws_path() -> String {
+        DEFAULT_WS_PATH.to_string()
+    }
+    fn default_device_key_path() -> PathBuf {
+        default_gearclaw_dir().join("device.key")
+    }
+}
+
+impl Default for GatewayConfig {
+    fn default() -> Self {
+        Self {
+            host: DEFAULT_GATEWAY_HOST.to_string(),
+            port: DEFAULT_GATEWAY_PORT,
+            ws_path: DEFAULT_WS_PATH.to_string(),
+            allow_unauthenticated_requests: false,
+            device_key_path: Self::default_device_key_path(),
+            auto_start: false,
+            tls_enabled: false,
+            tls_cert_path: None,
+            tls_key_path: None,
+        }
+    }
+}
+
+// ============================================================================
+// Config Loading and Validation
+// ============================================================================
+
+/// Configuration loader with validation
+pub struct ConfigLoader;
+
+impl ConfigLoader {
+    /// Load configuration from file or default locations
+    pub fn load(path: Option<&str>) -> Result<Config, GearClawError> {
+        let config_path = Self::resolve_config_path(path)?;
         let content = std::fs::read_to_string(&config_path)
-            .map_err(|e| GearClawError::ConfigParseError(format!("读取失败: {}", e)))?;
-
+            .map_err(|e| GearClawError::config_parse_error(format!("Failed to read: {}", e)))?;
         let config: Config = serde_yml::from_str(&content)
-            .map_err(|e| GearClawError::ConfigParseError(format!("解析失败: {}", e)))?;
-
+            .map_err(|e| GearClawError::config_parse_error(format!("Failed to parse: {}", e)))?;
         Ok(config)
     }
 
-    pub fn save(&self, path: &PathBuf) -> Result<(), GearClawError> {
-        let content = serde_yml::to_string(self)
-            .map_err(|e| GearClawError::ConfigParseError(format!("序列化失败: {}", e)))?;
+    /// Resolve configuration file path
+    fn resolve_config_path(path: Option<&str>) -> Result<PathBuf, GearClawError> {
+        if let Some(p) = path {
+            return Ok(PathBuf::from(p));
+        }
 
-        std::fs::write(path, content).map_err(GearClawError::IoError)?;
+        let default_paths = [
+            home_dir().join(".gearclaw/config.toml"),
+            dirs::config_dir()
+                .unwrap_or_else(|| PathBuf::from("."))
+                .join("gearclaw.toml"),
+            PathBuf::from("./gearclaw.toml"),
+        ];
+
+        default_paths
+            .into_iter()
+            .find(|p| p.exists())
+            .ok_or_else(|| {
+                GearClawError::config_not_found(
+                    "Config not found. Run `gearclaw init` or create ~/.gearclaw/config.toml",
+                )
+            })
+    }
+}
+
+/// Configuration validator
+pub struct ConfigValidator;
+
+impl ConfigValidator {
+    /// Validate configuration
+    pub fn validate(config: &Config) -> Result<(), GearClawError> {
+        // Validate LLM config
+        if config.llm.primary.is_empty() {
+            return Err(GearClawError::Domain(
+                crate::error::DomainError::ConfigInvalid {
+                    field: "llm.primary".to_string(),
+                    reason: "Primary model cannot be empty".to_string(),
+                },
+            ));
+        }
+
+        // Validate security level
+        let valid_security = ["deny", "allowlist", "full"];
+        if !valid_security.contains(&config.tools.security.as_str()) {
+            return Err(GearClawError::Domain(
+                crate::error::DomainError::ConfigInvalid {
+                    field: "tools.security".to_string(),
+                    reason: format!(
+                        "Invalid security level '{}'. Must be one of: {:?}",
+                        config.tools.security, valid_security
+                    ),
+                },
+            ));
+        }
 
         Ok(())
     }
+}
 
-    /// Generate a sample configuration file
+// ============================================================================
+// Config Implementation (backward compatibility)
+// ============================================================================
+
+impl Config {
+    /// Load configuration (backward compatibility wrapper)
+    pub fn load(path: &Option<String>) -> Result<Self, GearClawError> {
+        ConfigLoader::load(path.as_deref())
+    }
+
+    /// Save configuration to file
+    pub fn save(&self, path: &PathBuf) -> Result<(), GearClawError> {
+        let content = serde_yml::to_string(self).map_err(|e| {
+            GearClawError::config_parse_error(format!("Serialization failed: {}", e))
+        })?;
+        std::fs::write(path, content)?;
+        Ok(())
+    }
+
+    /// Generate a sample configuration
     pub fn sample() -> Self {
         Config {
             llm: LLMConfig {
@@ -378,32 +621,67 @@ impl Config {
                     "openai/gpt-4".to_string(),
                     "anthropic/claude-3-opus".to_string(),
                 ],
-                endpoint: default_endpoint(),
+                endpoint: DEFAULT_ENDPOINT.to_string(),
                 api_key: None,
-                embedding_model: default_embedding_model(),
+                embedding_model: DEFAULT_EMBEDDING_MODEL.to_string(),
+                temperature: Some(0.7),
             },
             tools: ToolsConfig {
-                security: default_security(),
-                host: default_host(),
+                security: "full".to_string(),
+                host: "gateway".to_string(),
                 elevated_enabled: true,
-                profile: default_profile(),
+                profile: "full".to_string(),
             },
             session: SessionConfig {
-                session_dir: dirs::home_dir().unwrap().join(".gearclaw/sessions"),
-                save_interval: default_save_interval(),
-                max_tokens: default_max_tokens(),
+                session_dir: default_gearclaw_dir().join("sessions"),
+                save_interval: DEFAULT_SAVE_INTERVAL,
+                max_tokens: DEFAULT_MAX_TOKENS,
             },
             agent: AgentConfig {
-                name: default_agent_name(),
-                system_prompt: default_system_prompt(),
-                workspace: dirs::home_dir().unwrap().join(".gearclaw/workspace"),
+                name: DEFAULT_AGENT_NAME.to_string(),
+                system_prompt: DEFAULT_SYSTEM_PROMPT.to_string(),
+                workspace: default_gearclaw_dir().join("workspace"),
                 memory_enabled: true,
-                skills_path: default_skills_path(),
-                triggers: Default::default(),
+                skills_path: default_gearclaw_dir().join("skills"),
+                skill_source_cache_ttl_seconds: 300,
+                skill_sources: vec![
+                    SkillSourceConfig {
+                        name: "local-default".to_string(),
+                        kind: SkillSourceKind::LocalDir,
+                        location: default_gearclaw_dir()
+                            .join("skills")
+                            .to_string_lossy()
+                            .to_string(),
+                        revision: None,
+                        enabled: true,
+                        trusted: true,
+                        verify_head_commit_signature: false,
+                    },
+                    SkillSourceConfig {
+                        name: "community-git".to_string(),
+                        kind: SkillSourceKind::GitRepo,
+                        location: "https://example.com/skills.git".to_string(),
+                        revision: None,
+                        enabled: false,
+                        trusted: false,
+                        verify_head_commit_signature: false,
+                    },
+                ],
+                skill_trust_policy: SkillTrustPolicy::LocalOnly,
+                triggers: AgentTriggerConfig::default(),
             },
-            memory: default_memory_config(),
-            mcp: default_mcp_config(),
-            gateway: default_gateway_config(),
+            memory: MemoryConfig::default(),
+            mcp: McpConfig::default(),
+            gateway: GatewayConfig::default(),
         }
     }
+}
+
+// ============================================================================
+// Backward Compatibility
+// ============================================================================
+
+/// Backward compatibility: default_endpoint function
+pub fn default_endpoint() -> String {
+    DEFAULT_ENDPOINT.to_string()
 }
