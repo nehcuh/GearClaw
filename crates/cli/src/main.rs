@@ -9,7 +9,7 @@ use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
 use crate::cli::{Cli, Commands};
 use gearclaw_agent::Agent;
-use gearclaw_core::config::{Config, SkillSourceKind, SkillTrustPolicy};
+use gearclaw_core::config::{Config, McpServerConfig, SkillSourceKind, SkillTrustPolicy};
 use gearclaw_core::error::GearClawError;
 
 #[tokio::main]
@@ -30,6 +30,44 @@ async fn main() -> Result<(), GearClawError> {
 
     // Parse CLI arguments
     let cli = Cli::parse();
+
+    // Resolve and store the effective config path for commands that need to write config
+    let effective_config_path = resolve_effective_config_path(&cli.config_path);
+
+    // mcp search only needs the built-in registry — no agent or API key required
+    if let Some(Commands::Mcp {
+        subcommand: crate::cli::McpCommands::Search { query },
+    }) = &cli.command
+    {
+        let q = query.as_deref().unwrap_or("");
+        let results = gearclaw_mcp::search_registry(q);
+        if results.is_empty() {
+            println!("没有找到匹配的 MCP 服务器: {}", q);
+        } else {
+            if q.is_empty() {
+                println!("\u{1F4CB} MCP 注册表 ({} 个):", results.len());
+            } else {
+                println!("\u{1F50D} MCP 注册表搜索 '{}' ({} 个):", q, results.len());
+            }
+            for entry in &results {
+                println!("  \u{2022} {} ({})", entry.name, entry.id);
+                println!("    {}", entry.description);
+                println!(
+                    "    安装方式: {} | 包: {}",
+                    entry.install_method.label(),
+                    entry.package
+                );
+                if !entry.required_env.is_empty() {
+                    println!("    需要环境变量: {}", entry.required_env.join(", "));
+                }
+                if let Some(notes) = entry.notes {
+                    println!("    \u{1F4DD} {}", notes);
+                }
+                println!();
+            }
+        }
+        return Ok(());
+    }
 
     // Handle Init command immediately
     if let Some(Commands::Init) = &cli.command {
@@ -180,6 +218,9 @@ async fn main() -> Result<(), GearClawError> {
                 }
             }
         },
+        Some(Commands::Mcp { subcommand }) => {
+            handle_mcp_subcommand(subcommand, &config, &effective_config_path, &agent).await?;
+        }
         Some(Commands::TestMcp) => {
             println!("🧪 Testing System Capabilities...");
             println!("================================");
@@ -1349,6 +1390,188 @@ fn sanitize_log_field(value: &str) -> String {
         .replace('\\', "\\\\")
         .replace('\n', "\\n")
         .replace('|', "\\|")
+}
+
+fn resolve_effective_config_path(cli_path: &Option<String>) -> PathBuf {
+    if let Some(p) = cli_path {
+        return PathBuf::from(p);
+    }
+    let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
+    let candidates = [
+        home.join(".gearclaw/config.toml"),
+        dirs::config_dir()
+            .unwrap_or_else(|| PathBuf::from("."))
+            .join("gearclaw.toml"),
+        PathBuf::from("./gearclaw.toml"),
+    ];
+    candidates
+        .into_iter()
+        .find(|p| p.exists())
+        .unwrap_or_else(|| home.join(".gearclaw/config.toml"))
+}
+
+async fn handle_mcp_subcommand(
+    subcommand: crate::cli::McpCommands,
+    config: &Config,
+    config_path: &PathBuf,
+    agent: &Agent,
+) -> Result<(), GearClawError> {
+    use crate::cli::McpCommands;
+    match subcommand {
+        McpCommands::List => {
+            let statuses = agent.mcp_manager.status_summary().await;
+            if statuses.is_empty() {
+                println!("没有配置 MCP 服务器");
+                println!("提示: 运行 `gearclaw mcp search` 搜索可用服务器");
+            } else {
+                println!("\u{1F50C} MCP 服务器状态 ({} 个):", statuses.len());
+                for entry in &statuses {
+                    let status_lower = entry.status.to_lowercase();
+                    let icon = if entry.enabled && status_lower.starts_with("connected") {
+                        "\u{2705}"
+                    } else if !entry.enabled {
+                        "\u{23F8}"
+                    } else {
+                        "\u{274C}"
+                    };
+                    println!(
+                        "  {} {} | cmd={} | status={} | tools={}",
+                        icon, entry.name, entry.command, entry.status, entry.tool_count
+                    );
+                    if let Some(info) = &entry.server_info {
+                        println!("     \u{2139} {}", info);
+                    }
+                }
+            }
+        }
+        McpCommands::Search { query } => {
+            let q = query.as_deref().unwrap_or("");
+            let results = gearclaw_mcp::search_registry(q);
+            if results.is_empty() {
+                println!("没有找到匹配的 MCP 服务器: {}", q);
+            } else {
+                if q.is_empty() {
+                    println!("\u{1F4CB} MCP 注册表 ({} 个):", results.len());
+                } else {
+                    println!("\u{1F50D} MCP 注册表搜索 '{}' ({} 个):", q, results.len());
+                }
+                for entry in &results {
+                    println!("  \u{2022} {} ({})", entry.name, entry.id);
+                    println!("    {}", entry.description);
+                    println!(
+                        "    安装方式: {} | 包: {}",
+                        entry.install_method.label(),
+                        entry.package
+                    );
+                    if !entry.required_env.is_empty() {
+                        println!("    需要环境变量: {}", entry.required_env.join(", "));
+                    }
+                    if let Some(notes) = entry.notes {
+                        println!("    \u{1F4DD} {}", notes);
+                    }
+                    println!();
+                }
+            }
+        }
+        McpCommands::Install { id } => {
+            let entry = match gearclaw_mcp::find_by_id(&id) {
+                Some(e) => e,
+                None => {
+                    println!("\u{274C} 未找到 MCP 服务器: {}", id);
+                    println!("提示: 运行 `gearclaw mcp search` 查看可用服务器");
+                    return Ok(());
+                }
+            };
+            println!("\u{1F4E6} 安装 MCP 服务器: {} ({})", entry.name, entry.id);
+            // Run package install command when applicable
+            if let Some(install_cmd) = entry.install_method.install_command(entry.package) {
+                println!("  运行: {}", install_cmd);
+                let parts: Vec<String> = install_cmd
+                    .split_whitespace()
+                    .map(|s| s.to_string())
+                    .collect();
+                if let Some((prog, args)) = parts.split_first() {
+                    let status = Command::new(prog)
+                        .args(args)
+                        .status()
+                        .map_err(GearClawError::IoError)?;
+                    if !status.success() {
+                        println!("\u{26A0}\u{FE0F}  安装命令返回非零状态，请检查上方输出");
+                    } else {
+                        println!("\u{2705} 包安装完成");
+                    }
+                }
+            } else if let gearclaw_mcp::InstallMethod::Manual(instructions) =
+                &entry.install_method
+            {
+                println!("\u{26A0}\u{FE0F}  需要手动安装: {}", instructions);
+            }
+            // Add server to config and save
+            let server_cfg = McpServerConfig {
+                command: entry.command.to_string(),
+                args: entry.default_args.iter().map(|s| s.to_string()).collect(),
+                env: Default::default(),
+                enabled: true,
+            };
+            let mut updated_config = config.clone();
+            updated_config
+                .mcp
+                .servers
+                .insert(entry.id.to_string(), server_cfg.clone());
+            updated_config.save(config_path)?;
+            // Update live manager
+            agent
+                .mcp_manager
+                .add_server(entry.id.to_string(), server_cfg)
+                .await?;
+            println!("\u{2705} MCP 服务器 '{}' 已添加到配置", entry.id);
+            if !entry.required_env.is_empty() {
+                println!("\u{26A0}\u{FE0F}  需要设置以下环境变量:");
+                for var in entry.required_env {
+                    println!("   export {}='<your_value>'", var);
+                }
+            }
+            if let Some(notes) = entry.notes {
+                println!("\u{1F4DD} 备注: {}", notes);
+            }
+        }
+        McpCommands::Enable { name } => {
+            let mut updated_config = config.clone();
+            if !updated_config.mcp.servers.contains_key(&name) {
+                println!("\u{274C} 未找到 MCP 服务器: {}", name);
+                println!("提示: 运行 `gearclaw mcp list` 查看已配置的服务器");
+                return Ok(());
+            }
+            updated_config.mcp.servers.get_mut(&name).unwrap().enabled = true;
+            updated_config.save(config_path)?;
+            agent.mcp_manager.set_server_enabled(&name, true).await?;
+            println!("\u{2705} 已启用 MCP 服务器: {}", name);
+        }
+        McpCommands::Disable { name } => {
+            let mut updated_config = config.clone();
+            if !updated_config.mcp.servers.contains_key(&name) {
+                println!("\u{274C} 未找到 MCP 服务器: {}", name);
+                println!("提示: 运行 `gearclaw mcp list` 查看已配置的服务器");
+                return Ok(());
+            }
+            updated_config.mcp.servers.get_mut(&name).unwrap().enabled = false;
+            updated_config.save(config_path)?;
+            agent.mcp_manager.set_server_enabled(&name, false).await?;
+            println!("\u{2705} 已禁用 MCP 服务器: {}", name);
+        }
+        McpCommands::Reload => {
+            println!("\u{1F504} 重新加载 MCP 服务器连接...");
+            agent.mcp_manager.reload().await?;
+            let statuses = agent.mcp_manager.status_summary().await;
+            let connected = statuses.iter().filter(|s| s.status.to_lowercase().starts_with("connected")).count();
+            println!(
+                "\u{2705} 重载完成: {} 个已连接 / {} 个已配置",
+                connected,
+                statuses.len()
+            );
+        }
+    }
+    Ok(())
 }
 
 async fn handle_gateway(

@@ -14,6 +14,8 @@ use std::collections::HashMap;
 use std::io::Write;
 use std::sync::Arc;
 use tracing::{error, info};
+// MCP registry access for self-extension tools
+use gearclaw_mcp;
 
 pub struct Agent {
     config: Config,
@@ -112,6 +114,7 @@ impl Agent {
         }
 
         let mcp_manager = Arc::new(McpManager::new(config.mcp.clone()));
+        // init_clients now takes &self (Mutex internally), call on the Arc directly
         if let Err(e) = mcp_manager.init_clients().await {
             tracing::error!("Failed to initialize MCP clients: {}", e);
         }
@@ -420,18 +423,263 @@ impl Agent {
     ) -> Result<ToolResult, GearClawError> {
         let args: Value = serde_json::from_str(arguments).unwrap_or(json!({}));
 
-        // Check if it's an MCP tool
-        if tool_name.contains("__") {
-            if !self.mcp_manager.is_enabled() {
-                return Err(GearClawError::from(crate::error::DomainError::Mcp {
-                    server: tool_name
-                        .split("__")
-                        .next()
-                        .unwrap_or("unknown")
-                        .to_string(),
-                    reason: "MCP support is disabled in this build".to_string(),
-                }));
+        // ============================================================
+        // MCP self-management tools (Agent can search/install/enable/reload)
+        // ============================================================
+        match tool_name {
+            "mcp_list_servers" => {
+                let summary = self.mcp_manager.status_summary().await;
+                if summary.is_empty() {
+                    return Ok(ToolResult {
+                        success: true,
+                        output: "No MCP servers configured. Use mcp_search_registry to find servers.".to_string(),
+                        error: None,
+                    });
+                }
+                let lines: Vec<String> = summary.iter().map(|s| {
+                    let tools_info = if s.tool_count > 0 {
+                        format!(" ({} tools)", s.tool_count)
+                    } else {
+                        String::new()
+                    };
+                    let server_info = s.server_info.as_deref().map(|i| format!(" [{}]", i)).unwrap_or_default();
+                    format!("  {} | {} | enabled={}{}{}",
+                        s.name, s.status, s.enabled, tools_info, server_info)
+                }).collect();
+                return Ok(ToolResult {
+                    success: true,
+                    output: format!("MCP Servers ({}):\n{}", summary.len(), lines.join("\n")),
+                    error: None,
+                });
             }
+
+            "mcp_search_registry" => {
+                let query = args.get("query").and_then(|v| v.as_str()).unwrap_or("");
+                let results = gearclaw_mcp::search_registry(query);
+                if results.is_empty() {
+                    return Ok(ToolResult {
+                        success: true,
+                        output: format!("No MCP servers found matching '{}'", query),
+                        error: None,
+                    });
+                }
+                let lines: Vec<String> = results.iter().map(|e| {
+                    let env_note = if e.required_env.is_empty() {
+                        String::new()
+                    } else {
+                        format!(" [requires: {}]", e.required_env.join(", "))
+                    };
+                    let notes = e.notes.map(|n| format!("\n     Note: {}", n)).unwrap_or_default();
+                    format!("  {} ({}) — {}{}{}\n     Install: {} install {}",
+                        e.id, e.name, e.description, env_note, notes,
+                        e.install_method.label(), e.package)
+                }).collect();
+                return Ok(ToolResult {
+                    success: true,
+                    output: format!("MCP Registry results for '{}':\n{}",
+                        if query.is_empty() { "all" } else { query },
+                        lines.join("\n\n")),
+                    error: None,
+                });
+            }
+
+            "mcp_install_server" => {
+                let id = args.get("id").and_then(|v| v.as_str()).ok_or_else(|| {
+                    GearClawError::ToolExecutionError("mcp_install_server requires 'id' parameter".to_string())
+                })?;
+
+                let entry = gearclaw_mcp::find_by_id(id).ok_or_else(|| {
+                    GearClawError::ToolExecutionError(format!("No registry entry found for id '{}'. Use mcp_search_registry to find valid ids.", id))
+                })?;
+
+                // Build the install command
+                let install_cmd = match &entry.install_method {
+                    gearclaw_mcp::InstallMethod::Npx => {
+                        // npx runs without explicit install; verify node is available
+                        Some(("node".to_string(), vec!["--version".to_string()]))
+                    }
+                    gearclaw_mcp::InstallMethod::Uvx => {
+                        Some(("uv".to_string(), vec!["tool".to_string(), "install".to_string(), entry.package.to_string()]))
+                    }
+                    gearclaw_mcp::InstallMethod::Pip => {
+                        Some(("pip".to_string(), vec!["install".to_string(), entry.package.to_string()]))
+                    }
+                    gearclaw_mcp::InstallMethod::Cargo => {
+                        Some(("cargo".to_string(), vec!["install".to_string(), entry.package.to_string()]))
+                    }
+                    gearclaw_mcp::InstallMethod::Manual(msg) => {
+                        return Ok(ToolResult {
+                            success: false,
+                            output: format!("Manual installation required: {}", msg),
+                            error: None,
+                        });
+                    }
+                };
+
+                let mut install_output = String::new();
+                if let Some((cmd, cmd_args)) = install_cmd {
+                    match self.tool_executor.exec_command(&cmd, cmd_args, None).await {
+                        Ok(result) => install_output = result.output,
+                        Err(e) => {
+                            return Ok(ToolResult {
+                                success: false,
+                                output: String::new(),
+                                error: Some(format!("Install command failed: {}", e)),
+                            });
+                        }
+                    }
+                }
+
+                // Write to config file
+                let config_path = dirs::home_dir()
+                    .unwrap_or_else(|| std::path::PathBuf::from("."))
+                    .join(".gearclaw/config.toml");
+
+                let mut config = crate::config::Config::load(&None).unwrap_or_else(|_| crate::config::Config::sample());
+                let server_cfg = crate::config::McpServerConfig {
+                    command: entry.command.to_string(),
+                    args: entry.default_args.iter().map(|s| s.to_string()).collect(),
+                    env: std::collections::HashMap::new(),
+                    enabled: true,
+                };
+                config.mcp.servers.insert(id.to_string(), server_cfg.clone());
+
+                if let Some(parent) = config_path.parent() {
+                    let _ = std::fs::create_dir_all(parent);
+                }
+
+                if let Err(e) = config.save(&config_path) {
+                    return Ok(ToolResult {
+                        success: false,
+                        output: String::new(),
+                        error: Some(format!("Config save failed: {}", e)),
+                    });
+                }
+
+                // Add to live manager and reconnect
+                if let Err(e) = self.mcp_manager.add_server(id.to_string(), server_cfg).await {
+                    tracing::warn!("MCP reconnect after install failed: {}", e);
+                }
+
+                let notes = entry.notes.map(|n| format!("\n  Note: {}", n)).unwrap_or_default();
+                let env_note = if entry.required_env.is_empty() {
+                    String::new()
+                } else {
+                    format!("\n  Required env vars: {}", entry.required_env.join(", "))
+                };
+
+                return Ok(ToolResult {
+                    success: true,
+                    output: format!(
+                        "✅ MCP server '{}' installed and added to config.{}{}\nInstall output: {}",
+                        id, notes, env_note, install_output.trim()
+                    ),
+                    error: None,
+                });
+            }
+
+            "mcp_enable_server" => {
+                let name = args.get("name").and_then(|v| v.as_str()).ok_or_else(|| {
+                    GearClawError::ToolExecutionError("mcp_enable_server requires 'name' parameter".to_string())
+                })?;
+
+                // Update config file
+                let config_path = dirs::home_dir()
+                    .unwrap_or_else(|| std::path::PathBuf::from("."))
+                    .join(".gearclaw/config.toml");
+                let mut config = crate::config::Config::load(&None).map_err(|e| {
+                    GearClawError::ToolExecutionError(format!("Failed to load config: {}", e))
+                })?;
+
+                if let Some(server) = config.mcp.servers.get_mut(name) {
+                    server.enabled = true;
+                } else {
+                    return Ok(ToolResult {
+                        success: false,
+                        output: String::new(),
+                        error: Some(format!("Server '{}' not found in config. Use mcp_install_server first.", name)),
+                    });
+                }
+
+                config.save(&config_path).map_err(|e| {
+                    GearClawError::ToolExecutionError(format!("Config save failed: {}", e))
+                })?;
+
+                if let Err(e) = self.mcp_manager.set_server_enabled(name, true).await {
+                    tracing::warn!("MCP enable failed in live manager: {}", e);
+                }
+
+                return Ok(ToolResult {
+                    success: true,
+                    output: format!("✅ MCP server '{}' enabled and reconnected.", name),
+                    error: None,
+                });
+            }
+
+            "mcp_disable_server" => {
+                let name = args.get("name").and_then(|v| v.as_str()).ok_or_else(|| {
+                    GearClawError::ToolExecutionError("mcp_disable_server requires 'name' parameter".to_string())
+                })?;
+
+                let config_path = dirs::home_dir()
+                    .unwrap_or_else(|| std::path::PathBuf::from("."))
+                    .join(".gearclaw/config.toml");
+                let mut config = crate::config::Config::load(&None).map_err(|e| {
+                    GearClawError::ToolExecutionError(format!("Failed to load config: {}", e))
+                })?;
+
+                if let Some(server) = config.mcp.servers.get_mut(name) {
+                    server.enabled = false;
+                } else {
+                    return Ok(ToolResult {
+                        success: false,
+                        output: String::new(),
+                        error: Some(format!("Server '{}' not found in config.", name)),
+                    });
+                }
+
+                config.save(&config_path).map_err(|e| {
+                    GearClawError::ToolExecutionError(format!("Config save failed: {}", e))
+                })?;
+
+                if let Err(e) = self.mcp_manager.set_server_enabled(name, false).await {
+                    tracing::warn!("MCP disable failed in live manager: {}", e);
+                }
+
+                return Ok(ToolResult {
+                    success: true,
+                    output: format!("🔇 MCP server '{}' disabled.", name),
+                    error: None,
+                });
+            }
+
+            "mcp_reload_servers" => {
+                match self.mcp_manager.reload().await {
+                    Ok(()) => {
+                        let summary = self.mcp_manager.status_summary().await;
+                        let connected = summary.iter().filter(|s| s.status == "Connected").count();
+                        return Ok(ToolResult {
+                            success: true,
+                            output: format!("✅ MCP servers reloaded. {}/{} connected.",
+                                connected, summary.len()),
+                            error: None,
+                        });
+                    }
+                    Err(e) => {
+                        return Ok(ToolResult {
+                            success: false,
+                            output: String::new(),
+                            error: Some(format!("Reload failed: {}", e)),
+                        });
+                    }
+                }
+            }
+
+            _ => {}
+        }
+
+        // Check if it's an MCP tool call (server__tool naming convention)
+        if tool_name.contains("__") {
             return self.mcp_manager.call_tool(tool_name, args).await;
         }
 

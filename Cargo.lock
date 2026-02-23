@@ -793,6 +793,7 @@ dependencies = [
  "gearclaw_channels",
  "gearclaw_core",
  "gearclaw_gateway",
+ "gearclaw_mcp",
  "serde_json",
  "tokio",
  "tracing",
@@ -878,6 +879,7 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror 1.0.69",
+ "tokio",
  "tracing",
 ]
 
