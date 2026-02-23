@@ -98,6 +98,7 @@ impl Agent {
         let llm_client = Arc::new(LLMClient::new(
             api_key,
             endpoint,
+            config.llm.embedding_endpoint.clone(),
             config.llm.primary.clone(),
             config.llm.embedding_model.clone(),
             config.llm.temperature,
@@ -149,9 +150,8 @@ impl Agent {
 
     pub async fn start_interactive(&self) -> Result<(), GearClawError> {
         let mut session = self.session_manager.get_or_create_session("interactive")?;
-        let mut rl = Editor::<(), DefaultHistory>::new().map_err(|e| {
-            GearClawError::IoError(std::io::Error::new(std::io::ErrorKind::Other, e))
-        })?;
+        let mut rl = Editor::<(), DefaultHistory>::new()
+            .map_err(|e| GearClawError::IoError(std::io::Error::other(e)))?;
 
         println!("⚙️ GearClaw 交互模式已启动");
         println!("输入 'exit' 或 'quit' 退出");
@@ -296,7 +296,7 @@ impl Agent {
                 .chat_completion_stream(
                     messages,
                     Some(llm_tools.clone()),
-                    Some(self.config.session.max_tokens),
+                    self.config.llm.max_output_tokens,
                 )
                 .await?;
 
@@ -832,10 +832,10 @@ impl Agent {
         }
 
         // Check enabled channels (whitelist)
-        if !trigger_config.enabled_channels.is_empty() {
-            if !trigger_config.enabled_channels.contains(&channel_key) {
-                return Ok(false);
-            }
+        if !trigger_config.enabled_channels.is_empty()
+            && !trigger_config.enabled_channels.contains(&channel_key)
+        {
+            return Ok(false);
         }
 
         // Check trigger mode

@@ -3,16 +3,22 @@
 //! This module provides tools for controlling macOS applications,
 //! executing AppleScript, simulating input, and more.
 
+mod accessibility;
 mod app;
 mod applescript;
 mod clipboard;
+mod content;
+mod frontmost;
 mod input;
 mod notification;
 mod system;
 
+pub use accessibility::AccessibilityChecker;
 pub use app::AppManager;
 pub use applescript::AppleScriptExecutor;
-pub use clipboard::ClipboardManager;
+pub use clipboard::{ClipboardManager, ClipboardType};
+pub use content::ContentReader;
+pub use frontmost::FrontmostAppReader;
 pub use input::InputSimulator;
 pub use notification::NotificationSender;
 pub use system::SystemControl;
@@ -28,6 +34,9 @@ pub struct MacosController {
     pub input: InputSimulator,
     pub notification: NotificationSender,
     pub system: SystemControl,
+    pub frontmost: FrontmostAppReader,
+    pub accessibility: AccessibilityChecker,
+    pub content: ContentReader,
 }
 
 impl MacosController {
@@ -39,6 +48,9 @@ impl MacosController {
             input: InputSimulator::new(),
             notification: NotificationSender::new(),
             system: SystemControl::new(),
+            frontmost: FrontmostAppReader::new(),
+            accessibility: AccessibilityChecker::new(),
+            content: ContentReader::new(),
         })
     }
 
@@ -145,6 +157,33 @@ impl MacosController {
                 let voice = args["voice"].as_str();
                 let rate = args["rate"].as_u64().unwrap_or(175);
                 self.system.say(text, voice, rate).await
+            }
+
+            "macos_get_frontmost_app" => self.frontmost.get_frontmost_app().await,
+
+            "macos_check_accessibility" => self.accessibility.check_accessibility().await,
+
+            "macos_read_selected_text" => {
+                let preserve = args["preserve_clipboard"].as_bool().unwrap_or(true);
+                let timeout_ms = args["timeout_ms"].as_u64().unwrap_or(300);
+                let max_chars = args["max_chars"].as_u64().unwrap_or(0) as usize;
+                self.content
+                    .read_selected_text(preserve, timeout_ms, max_chars)
+                    .await
+            }
+
+            "macos_read_focused_field" => {
+                let app_name = args["app_name"].as_str();
+                let max_chars = args["max_chars"].as_u64().unwrap_or(0) as usize;
+                self.content.read_focused_field(app_name, max_chars).await
+            }
+
+            "macos_read_document" => {
+                let app_name = args["app_name"].as_str().ok_or_else(|| {
+                    GearClawError::ToolExecutionError("缺少 app_name 参数".to_string())
+                })?;
+                let max_chars = args["max_chars"].as_u64().unwrap_or(0) as usize;
+                self.content.read_document(app_name, max_chars).await
             }
 
             _ => Err(GearClawError::ToolExecutionError(format!(
@@ -321,6 +360,62 @@ impl MacosController {
                         "rate": { "type": "integer", "description": "语速 (默认: 175)" }
                     },
                     "required": ["text"]
+                }
+            }),
+            // Content reading
+            json!({
+                "name": "macos_get_frontmost_app",
+                "description": "获取当前前台应用的名称。读取内容前建议先调用此工具确认目标应用。需要辅助功能权限。",
+                "parameters": {
+                    "type": "object",
+                    "properties": {},
+                    "required": []
+                }
+            }),
+            json!({
+                "name": "macos_check_accessibility",
+                "description": "检测是否已获得 macOS 辅助功能权限。返回 'OK' 或 'DENIED: 授权指导'",
+                "parameters": {
+                    "type": "object",
+                    "properties": {},
+                    "required": []
+                }
+            }),
+            json!({
+                "name": "macos_read_selected_text",
+                "description": "读取当前已选中的文本（通过剪贴板中转）。调用前需确保目标应用已在前台。不支持并发调用。",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "preserve_clipboard": { "type": "boolean", "description": "读取后是否还原剪贴板文本（默认: true）。非文本内容无法还原。" },
+                        "timeout_ms": { "type": "integer", "description": "等待剪贴板更新的最大毫秒数（默认: 300）" },
+                        "max_chars": { "type": "integer", "description": "最大返回字符数（0 表示不限制）" }
+                    },
+                    "required": []
+                }
+            }),
+            json!({
+                "name": "macos_read_focused_field",
+                "description": "通过 Accessibility API 读取当前焦点 UI 元素（输入框等）的文本内容。调用前需确保目标应用已在前台。",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "app_name": { "type": "string", "description": "应用名称（可选），提供时限定读取指定进程" },
+                        "max_chars": { "type": "integer", "description": "最大返回字符数（0 = 不限制）" }
+                    },
+                    "required": []
+                }
+            }),
+            json!({
+                "name": "macos_read_document",
+                "description": "通过 App-specific 脚本读取应用当前文档内容。内置支持: TextEdit、Notes、Safari、Terminal。其他应用返回备选建议。",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "app_name": { "type": "string", "description": "应用名称（必填），如 TextEdit、Notes、Safari、Terminal" },
+                        "max_chars": { "type": "integer", "description": "最大返回字符数（0 = 不限制）" }
+                    },
+                    "required": ["app_name"]
                 }
             }),
         ]

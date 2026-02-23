@@ -1,8 +1,13 @@
 //! macOS notification center integration
 
 use crate::error::GearClawError;
-use std::process::Command;
+use std::time::Duration;
+use tokio::process::Command;
+use tokio::time::timeout;
 
+const NOTIFY_TIMEOUT: Duration = Duration::from_secs(5);
+
+#[derive(Default)]
 pub struct NotificationSender;
 
 impl NotificationSender {
@@ -17,7 +22,6 @@ impl NotificationSender {
         message: &str,
         sound: bool,
     ) -> Result<String, GearClawError> {
-        // Use osascript to send notification
         let sound_option = if sound { "sound name \"Glass\"" } else { "" };
 
         let script = format!(
@@ -27,10 +31,12 @@ impl NotificationSender {
             sound_option
         );
 
-        let output = Command::new("osascript")
-            .arg("-e")
-            .arg(&script)
-            .output()
+        let fut = Command::new("osascript").arg("-e").arg(&script).output();
+        let output = timeout(NOTIFY_TIMEOUT, fut)
+            .await
+            .map_err(|_| {
+                GearClawError::ToolExecutionError("ERROR:TIMEOUT: 发送通知超时".to_string())
+            })?
             .map_err(|e| GearClawError::ToolExecutionError(format!("发送通知失败: {}", e)))?;
 
         if !output.status.success() {

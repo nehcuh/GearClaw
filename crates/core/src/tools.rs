@@ -232,6 +232,59 @@ impl ToolExecutor {
                         "required": ["text"]
                     })),
                 },
+                // Content reading tools
+                ToolSpec {
+                    name: "macos_get_frontmost_app".to_string(),
+                    description: "获取当前前台应用的名称。读取内容前建议先调用此工具。需要辅助功能权限。".to_string(),
+                    requires_args: false,
+                    parameters: Some(json!({ "type": "object", "properties": {}, "required": [] })),
+                },
+                ToolSpec {
+                    name: "macos_check_accessibility".to_string(),
+                    description: "检测是否已获得 macOS 辅助功能权限。返回 'OK' 或 'DENIED: 授权指导'".to_string(),
+                    requires_args: false,
+                    parameters: Some(json!({ "type": "object", "properties": {}, "required": [] })),
+                },
+                ToolSpec {
+                    name: "macos_read_selected_text".to_string(),
+                    description: "读取当前已选中的文本（剪贴板中转）。调用前需确保目标应用已在前台。不支持并发调用。".to_string(),
+                    requires_args: false,
+                    parameters: Some(json!({
+                        "type": "object",
+                        "properties": {
+                            "preserve_clipboard": { "type": "boolean", "description": "读取后是否还原剪贴板文本（默认: true）" },
+                            "timeout_ms": { "type": "integer", "description": "等待剪贴板更新毫秒数（默认: 300）" },
+                            "max_chars": { "type": "integer", "description": "最大返回字符数（0 = 不限制）" }
+                        },
+                        "required": []
+                    })),
+                },
+                ToolSpec {
+                    name: "macos_read_focused_field".to_string(),
+                    description: "通过 Accessibility API 读取当前焦点 UI 元素的文本内容。调用前需确保目标应用已在前台。".to_string(),
+                    requires_args: false,
+                    parameters: Some(json!({
+                        "type": "object",
+                        "properties": {
+                            "app_name": { "type": "string", "description": "应用名称（可选）" },
+                            "max_chars": { "type": "integer", "description": "最大返回字符数（0 = 不限制）" }
+                        },
+                        "required": []
+                    })),
+                },
+                ToolSpec {
+                    name: "macos_read_document".to_string(),
+                    description: "通过 App-specific 脚本读取应用当前文档内容。内置支持: TextEdit、Notes、Safari、Terminal。".to_string(),
+                    requires_args: true,
+                    parameters: Some(json!({
+                        "type": "object",
+                        "properties": {
+                            "app_name": { "type": "string", "description": "应用名称（必填）: TextEdit、Notes、Safari、Terminal" },
+                            "max_chars": { "type": "integer", "description": "最大返回字符数（0 = 不限制）" }
+                        },
+                        "required": ["app_name"]
+                    })),
+                },
             ];
             tools.extend(macos_tools);
         }

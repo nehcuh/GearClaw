@@ -3,8 +3,13 @@
 //! Provides functions to launch, quit, and control applications.
 
 use crate::error::GearClawError;
-use std::process::Command;
+use std::time::Duration;
+use tokio::process::Command;
+use tokio::time::timeout;
 
+const OSASCRIPT_TIMEOUT: Duration = Duration::from_secs(5);
+
+#[derive(Default)]
 pub struct AppManager;
 
 impl AppManager {
@@ -14,10 +19,15 @@ impl AppManager {
 
     /// Launch an application by name
     pub async fn launch(&self, app_name: &str) -> Result<String, GearClawError> {
-        let output = Command::new("open")
-            .arg("-a")
-            .arg(app_name)
-            .output()
+        let fut = Command::new("open").arg("-a").arg(app_name).output();
+        let output = timeout(OSASCRIPT_TIMEOUT, fut)
+            .await
+            .map_err(|_| {
+                GearClawError::ToolExecutionError(format!(
+                    "ERROR:TIMEOUT: 启动应用 {} 超时",
+                    app_name
+                ))
+            })?
             .map_err(|e| GearClawError::ToolExecutionError(format!("启动应用失败: {}", e)))?;
 
         if !output.status.success() {
@@ -34,11 +44,15 @@ impl AppManager {
     /// Quit an application by name
     pub async fn quit(&self, app_name: &str) -> Result<String, GearClawError> {
         let script = format!("tell application \"{}\" to quit", app_name);
-
-        let output = Command::new("osascript")
-            .arg("-e")
-            .arg(&script)
-            .output()
+        let fut = Command::new("osascript").arg("-e").arg(&script).output();
+        let output = timeout(OSASCRIPT_TIMEOUT, fut)
+            .await
+            .map_err(|_| {
+                GearClawError::ToolExecutionError(format!(
+                    "ERROR:TIMEOUT: 退出应用 {} 超时",
+                    app_name
+                ))
+            })?
             .map_err(|e| GearClawError::ToolExecutionError(format!("退出应用失败: {}", e)))?;
 
         if !output.status.success() {
@@ -55,11 +69,15 @@ impl AppManager {
     /// Bring application to front
     pub async fn bring_to_front(&self, app_name: &str) -> Result<String, GearClawError> {
         let script = format!("tell application \"{}\" to activate", app_name);
-
-        let output = Command::new("osascript")
-            .arg("-e")
-            .arg(&script)
-            .output()
+        let fut = Command::new("osascript").arg("-e").arg(&script).output();
+        let output = timeout(OSASCRIPT_TIMEOUT, fut)
+            .await
+            .map_err(|_| {
+                GearClawError::ToolExecutionError(format!(
+                    "ERROR:TIMEOUT: 切换应用 {} 超时",
+                    app_name
+                ))
+            })?
             .map_err(|e| GearClawError::ToolExecutionError(format!("切换应用失败: {}", e)))?;
 
         if !output.status.success() {
@@ -79,11 +97,15 @@ impl AppManager {
             "tell application \"System Events\" to return (name of processes) contains \"{}\"",
             app_name
         );
-
-        let output = Command::new("osascript")
-            .arg("-e")
-            .arg(&script)
-            .output()
+        let fut = Command::new("osascript").arg("-e").arg(&script).output();
+        let output = timeout(OSASCRIPT_TIMEOUT, fut)
+            .await
+            .map_err(|_| {
+                GearClawError::ToolExecutionError(format!(
+                    "ERROR:TIMEOUT: 检查应用 {} 状态超时",
+                    app_name
+                ))
+            })?
             .map_err(|e| GearClawError::ToolExecutionError(format!("检查应用状态失败: {}", e)))?;
 
         if !output.status.success() {
@@ -108,11 +130,12 @@ impl AppManager {
     /// Get list of running applications
     pub async fn list_running(&self) -> Result<String, GearClawError> {
         let script = "tell application \"System Events\" to return name of (processes whose background only is false)";
-
-        let output = Command::new("osascript")
-            .arg("-e")
-            .arg(script)
-            .output()
+        let fut = Command::new("osascript").arg("-e").arg(script).output();
+        let output = timeout(OSASCRIPT_TIMEOUT, fut)
+            .await
+            .map_err(|_| {
+                GearClawError::ToolExecutionError("ERROR:TIMEOUT: 获取应用列表超时".to_string())
+            })?
             .map_err(|e| GearClawError::ToolExecutionError(format!("获取应用列表失败: {}", e)))?;
 
         if !output.status.success() {
