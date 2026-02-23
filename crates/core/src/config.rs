@@ -455,6 +455,15 @@ pub struct McpServerConfig {
     /// Environment variables
     #[serde(default)]
     pub env: HashMap<String, String>,
+    /// Whether this server is active (default: true)
+    #[serde(default = "McpServerConfig::default_enabled")]
+    pub enabled: bool,
+}
+
+impl McpServerConfig {
+    fn default_enabled() -> bool {
+        true
+    }
 }
 
 // ============================================================================

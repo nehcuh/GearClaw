@@ -118,6 +118,12 @@ pub enum Commands {
     /// Test MCP integration (shows capability status when MCP is disabled)
     TestMcp,
 
+    /// Manage MCP servers
+    Mcp {
+        #[command(subcommand)]
+        subcommand: McpCommands,
+    },
+
     /// Start Gateway server
     Gateway {
         /// Gateway host
@@ -144,4 +150,37 @@ pub enum MemoryCommands {
     Sync,
     /// Search memory
     Search { query: String },
+}
+
+#[derive(Subcommand, Debug)]
+pub enum McpCommands {
+    /// List all configured MCP servers and their connection status
+    List,
+
+    /// Search the built-in MCP server registry
+    Search {
+        /// Search query (omit to list all)
+        query: Option<String>,
+    },
+
+    /// Install an MCP server from the registry by ID and add it to config
+    Install {
+        /// Registry ID (e.g. filesystem, github, fetch)
+        id: String,
+    },
+
+    /// Enable an MCP server by config name
+    Enable {
+        /// Server name as defined in config
+        name: String,
+    },
+
+    /// Disable an MCP server by config name
+    Disable {
+        /// Server name as defined in config
+        name: String,
+    },
+
+    /// Reload all MCP server connections
+    Reload,
 }

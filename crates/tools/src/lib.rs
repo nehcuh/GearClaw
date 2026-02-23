@@ -328,6 +328,87 @@ impl ToolExecutor {
                 requires_args: false,
                 parameters: None,
             },
+            // ---- MCP self-management tools ----
+            ToolSpec {
+                name: "mcp_list_servers".to_string(),
+                description: "列出所有已配置的 MCP 服务器及其连接状态和工具数量".to_string(),
+                requires_args: false,
+                parameters: Some(json!({
+                    "type": "object",
+                    "properties": {},
+                    "required": []
+                })),
+            },
+            ToolSpec {
+                name: "mcp_search_registry".to_string(),
+                description: "在内置 MCP 服务器目录中搜索可用服务器。支持按名称、描述、标签搜索。查询为空时列出所有服务器".to_string(),
+                requires_args: true,
+                parameters: Some(json!({
+                    "type": "object",
+                    "properties": {
+                        "query": {
+                            "type": "string",
+                            "description": "搜索词（如 'database', 'web', 'github'）。为空时列出全部"
+                        }
+                    },
+                    "required": []
+                })),
+            },
+            ToolSpec {
+                name: "mcp_install_server".to_string(),
+                description: "安装并启用一个 MCP 服务器。自动运行安装命令并将服务器写入配置文件".to_string(),
+                requires_args: true,
+                parameters: Some(json!({
+                    "type": "object",
+                    "properties": {
+                        "id": {
+                            "type": "string",
+                            "description": "MCP 服务器注册表 ID（如 'filesystem', 'github', 'fetch'）。先用 mcp_search_registry 查找"
+                        }
+                    },
+                    "required": ["id"]
+                })),
+            },
+            ToolSpec {
+                name: "mcp_enable_server".to_string(),
+                description: "启用一个已配置但被禁用的 MCP 服务器，并重新建立连接".to_string(),
+                requires_args: true,
+                parameters: Some(json!({
+                    "type": "object",
+                    "properties": {
+                        "name": {
+                            "type": "string",
+                            "description": "配置文件中 MCP 服务器的名称"
+                        }
+                    },
+                    "required": ["name"]
+                })),
+            },
+            ToolSpec {
+                name: "mcp_disable_server".to_string(),
+                description: "禁用一个 MCP 服务器（不删除配置，可随时重新启用）".to_string(),
+                requires_args: true,
+                parameters: Some(json!({
+                    "type": "object",
+                    "properties": {
+                        "name": {
+                            "type": "string",
+                            "description": "要禁用的 MCP 服务器名称"
+                        }
+                    },
+                    "required": ["name"]
+                })),
+            },
+            ToolSpec {
+                name: "mcp_reload_servers".to_string(),
+                description: "重新连接所有已启用的 MCP 服务器（配置变更后使用）".to_string(),
+                requires_args: false,
+                parameters: Some(json!({
+                    "type": "object",
+                    "properties": {},
+                    "required": []
+                })),
+            },
         ]
     }
 }
