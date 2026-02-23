@@ -98,6 +98,7 @@ impl Agent {
         let llm_client = Arc::new(LLMClient::new(
             api_key,
             endpoint,
+            config.llm.embedding_endpoint.clone(),
             config.llm.primary.clone(),
             config.llm.embedding_model.clone(),
             config.llm.temperature,
@@ -295,7 +296,7 @@ impl Agent {
                 .chat_completion_stream(
                     messages,
                     Some(llm_tools.clone()),
-                    Some(self.config.session.max_tokens),
+                    self.config.llm.max_output_tokens,
                 )
                 .await?;
 

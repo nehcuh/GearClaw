@@ -89,9 +89,12 @@ pub struct LLMConfig {
     /// Fallback models
     #[serde(default)]
     pub fallbacks: Vec<String>,
-    /// API endpoint
+    /// API endpoint (base URL for chat completions)
     #[serde(default = "LLMConfig::default_endpoint")]
     pub endpoint: String,
+    /// Embedding endpoint override (defaults to `{endpoint}/embeddings` when not set)
+    #[serde(default)]
+    pub embedding_endpoint: Option<String>,
     /// API key (optional, can be loaded from env)
     #[serde(default)]
     pub api_key: Option<String>,
@@ -101,6 +104,9 @@ pub struct LLMConfig {
     /// Temperature (sampling)
     #[serde(default = "LLMConfig::default_temperature")]
     pub temperature: Option<f32>,
+    /// Maximum output tokens for chat completions (leave unset to use the model's default)
+    #[serde(default)]
+    pub max_output_tokens: Option<usize>,
 }
 
 impl LLMConfig {
@@ -121,9 +127,11 @@ impl Default for LLMConfig {
             primary: "gpt-4".to_string(),
             fallbacks: vec![],
             endpoint: DEFAULT_ENDPOINT.to_string(),
+            embedding_endpoint: None,
             api_key: None,
             embedding_model: DEFAULT_EMBEDDING_MODEL.to_string(),
             temperature: Some(0.7),
+            max_output_tokens: None,
         }
     }
 }
@@ -622,9 +630,11 @@ impl Config {
                     "anthropic/claude-3-opus".to_string(),
                 ],
                 endpoint: DEFAULT_ENDPOINT.to_string(),
+                embedding_endpoint: None,
                 api_key: None,
                 embedding_model: DEFAULT_EMBEDDING_MODEL.to_string(),
                 temperature: Some(0.7),
+                max_output_tokens: None,
             },
             tools: ToolsConfig {
                 security: "full".to_string(),

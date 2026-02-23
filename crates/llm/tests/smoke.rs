@@ -5,6 +5,7 @@ fn llm_smoke_client_construction() {
     let _client = LLMClient::new(
         "test-key".to_string(),
         "https://example.com/v1".to_string(),
+        None,
         "gpt-test".to_string(),
         "embed-test".to_string(),
         Some(0.7),

@@ -21,6 +21,7 @@ fn memory_smoke_manager_new() {
     let llm_client = Arc::new(LLMClient::new(
         "test-key".to_string(),
         "https://example.com/v1".to_string(),
+        None,
         "gpt-test".to_string(),
         "embed-test".to_string(),
         Some(0.7),

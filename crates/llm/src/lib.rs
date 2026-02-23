@@ -121,6 +121,8 @@ pub struct LLMClient {
     client: Client,
     api_key: String,
     endpoint: String,
+    /// Explicit embedding endpoint; when None, derived as `{endpoint}/embeddings`.
+    embedding_endpoint: Option<String>,
     model: String,
     embedding_model: String,
     temperature: Option<f32>,
@@ -130,6 +132,7 @@ impl LLMClient {
     pub fn new(
         api_key: String,
         endpoint: String,
+        embedding_endpoint: Option<String>,
         model: String,
         embedding_model: String,
         temperature: Option<f32>,
@@ -141,6 +144,7 @@ impl LLMClient {
                 .unwrap_or_else(|_| Client::new()),
             api_key,
             endpoint,
+            embedding_endpoint,
             model,
             embedding_model,
             temperature,
@@ -152,7 +156,10 @@ impl LLMClient {
             model: self.embedding_model.clone(),
             input: text.to_string(),
         };
-        let url = format!("{}/embeddings", self.endpoint.trim_end_matches('/'));
+        let url = match &self.embedding_endpoint {
+            Some(ep) => ep.clone(),
+            None => format!("{}/embeddings", self.endpoint.trim_end_matches('/')),
+        };
 
         info!("Sending embedding request to: {}", url);
         let response = self
@@ -191,7 +198,7 @@ impl LLMClient {
         &self,
         messages: Vec<Message>,
         tools: Option<Vec<ToolSpec>>,
-        max_tokens: Option<usize>,
+        max_output_tokens: Option<usize>,
     ) -> Result<
         Pin<Box<dyn Stream<Item = Result<ChatCompletionStreamResponse, LlmError>> + Send>>,
         LlmError,
@@ -199,7 +206,7 @@ impl LLMClient {
         let request = ChatCompletionRequest {
             model: self.model.clone(),
             messages,
-            max_tokens,
+            max_tokens: max_output_tokens,
             temperature: self.temperature,
             tools: tools.clone(),
             tool_choice: None,
@@ -256,7 +263,7 @@ impl LLMClient {
                 let fallback_request = ChatCompletionRequest {
                     model: self.model.clone(),
                     messages: fallback_messages,
-                    max_tokens,
+                    max_tokens: max_output_tokens,
                     temperature: self.temperature,
                     tools: None,
                     tool_choice: None,
