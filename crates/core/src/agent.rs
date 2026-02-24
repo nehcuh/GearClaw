@@ -548,11 +548,16 @@ impl Agent {
                     let _ = std::fs::create_dir_all(parent);
                 }
 
-                if let Err(e) = config.save(&config_path) {
+                if let Err(e) = config.save_with_lock_nonblocking(&config_path) {
+                    let error_msg = if e.to_string().contains("locked by another process") {
+                        "Config file is busy (another process is writing). Please try again.".to_string()
+                    } else {
+                        format!("Config save failed: {}", e)
+                    };
                     return Ok(ToolResult {
                         success: false,
                         output: String::new(),
-                        error: Some(format!("Config save failed: {}", e)),
+                        error: Some(error_msg),
                     });
                 }
 
@@ -601,8 +606,13 @@ impl Agent {
                     });
                 }
 
-                config.save(&config_path).map_err(|e| {
-                    GearClawError::ToolExecutionError(format!("Config save failed: {}", e))
+                config.save_with_lock_nonblocking(&config_path).map_err(|e| {
+                    let error_msg = if e.to_string().contains("locked by another process") {
+                        "Config file is busy (another process is writing). Please try again.".to_string()
+                    } else {
+                        format!("Config save failed: {}", e)
+                    };
+                    GearClawError::ToolExecutionError(error_msg)
                 })?;
 
                 if let Err(e) = self.mcp_manager.set_server_enabled(name, true).await {
@@ -638,8 +648,13 @@ impl Agent {
                     });
                 }
 
-                config.save(&config_path).map_err(|e| {
-                    GearClawError::ToolExecutionError(format!("Config save failed: {}", e))
+                config.save_with_lock_nonblocking(&config_path).map_err(|e| {
+                    let error_msg = if e.to_string().contains("locked by another process") {
+                        "Config file is busy (another process is writing). Please try again.".to_string()
+                    } else {
+                        format!("Config save failed: {}", e)
+                    };
+                    GearClawError::ToolExecutionError(error_msg)
                 })?;
 
                 if let Err(e) = self.mcp_manager.set_server_enabled(name, false).await {
@@ -1034,18 +1049,7 @@ impl Agent {
         // Create session ID from platform and source
         let session_id = format!("{}:{}", platform, source_id);
 
-        // Get or create session
-        let mut session = self.session_manager.get_or_create_session(&session_id)?;
-
-        // Add user message to session
-        session.add_message(Message {
-            role: "user".to_string(),
-            content: Some(content.to_string()),
-            tool_calls: None,
-            tool_call_id: None,
-        });
-
-        // Check if agent should respond
+        // Check if agent should respond (does not require session)
         let should_respond = self.should_respond_to_message(platform, source_id, content)?;
 
         if !should_respond {
@@ -1053,10 +1057,26 @@ impl Agent {
             return Ok(String::new());
         }
 
+        // Atomically add user message to session
+        self.session_manager
+            .add_message(
+                &session_id,
+                Message {
+                    role: "user".to_string(),
+                    content: Some(content.to_string()),
+                    tool_calls: None,
+                    tool_call_id: None,
+                },
+            )
+            .await?;
+
+        // Load session for processing
+        let mut session = self.session_manager.get_or_create_session(&session_id)?;
+
         // Process message and get response
         let response = self.process_message(&mut session, content).await?;
 
-        // Save session
+        // Save session (with the assistant's response and any tool calls)
         self.session_manager.save_session(&session).await?;
 
         Ok(response)

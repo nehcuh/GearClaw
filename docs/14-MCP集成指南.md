@@ -7,7 +7,7 @@ GearClaw 实现了完整的 MCP（Model Context Protocol）支持，包含：
 1. 真实 Stdio 传输层（子进程通信）
 2. JSON-RPC 2.0 协议握手与工具调用
 3. 多服务器并行管理
-4. 内置注册表（12 个官方服务器）
+4. 内置注册表（13 个官方服务器）
 5. Agent 自主扩展能力（搜索 → 安装 → 启用 → 重载）
 6. CLI 管理命令 `gearclaw mcp`
 
@@ -144,7 +144,7 @@ gearclaw mcp reload
 
 ## 6. 内置注册表
 
-内置 12 个官方 MCP 服务器：
+内置 13 个官方 MCP 服务器：
 
 | ID | 名称 | 安装方式 | 必要环境变量 |
 |----|------|----------|-------------|
@@ -160,6 +160,7 @@ gearclaw mcp reload
 | `aws-kb-retrieval` | AWS Knowledge Base | npx | `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION` |
 | `google-maps` | Google Maps | npx | `GOOGLE_MAPS_API_KEY` |
 | `sequential-thinking` | Sequential Thinking | npx | — |
+| `context7` | Context7 | npx | — |
 
 ---
 

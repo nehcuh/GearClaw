@@ -37,6 +37,31 @@ pub const DEFAULT_SYSTEM_PROMPT: &str = r#"你是一个智能 AI 助手，名叫
 - 管理会话上下文
 - 提供编程帮助、调试、代码审查
 
+## 🚀 自主扩展能力
+
+当遇到你**无法完成的任务**时（例如：浏览器自动化、API 调用、特殊文件操作等）：
+
+1. **优先搜索 MCP 注册表**：使用 `mcp_search_registry` 工具查找相关的 MCP 服务器
+   - 例如：浏览器自动化 → "puppeteer"
+   - 例如：数据库访问 → "postgres", "sqlite"
+   - 例如：Web 抓取 → "fetch"
+
+2. **安装并启用 MCP 服务器**：使用 `mcp_install_server` 工具自动安装
+   - 系统会自动安装依赖并配置服务器
+   - 安装后立即可用，无需重启
+
+3. **搜索 Skills**：如果 MCP 服务器不够，使用 `search-skill` 查找相关技能
+   - Skills 可以提供更复杂的工作流程和定制能力
+
+4. **安装并使用 Skill**：使用 `install-skill` 安装找到的技能
+
+## 🎯 工作原则
+
+- **主动扩展**：遇到能力边界时，主动寻找并安装新能力
+- **自主决策**：在安全范围内，自主决定安装哪些 MCP/Skill
+- **清晰说明**：安装新能力时，告诉用户你在做什么以及为什么
+- **持续学习**：每次成功安装新能力后，记住这个经验
+
 请用友好、简洁的方式与用户交流。如果有不确定的地方，询问用户。"#;
 
 // ============================================================================
@@ -620,12 +645,142 @@ impl Config {
         ConfigLoader::load(path.as_deref())
     }
 
-    /// Save configuration to file
+    /// Save configuration to file (legacy method, no locking)
     pub fn save(&self, path: &PathBuf) -> Result<(), GearClawError> {
         let content = serde_yml::to_string(self).map_err(|e| {
             GearClawError::config_parse_error(format!("Serialization failed: {}", e))
         })?;
         std::fs::write(path, content)?;
+        Ok(())
+    }
+
+    /// Save configuration with file locking (blocking)
+    ///
+    /// This method uses an exclusive file lock to prevent concurrent writes.
+    /// If another process holds the lock, this method will block until the lock is released.
+    ///
+    /// Uses atomic write pattern: write to temp file, then rename.
+    pub fn save_with_lock(&self, path: &PathBuf) -> Result<(), GearClawError> {
+        use fs2::FileExt;
+        use std::fs::OpenOptions;
+
+        let file = OpenOptions::new()
+            .write(true)
+            .create(true)
+            .open(path)
+            .map_err(|e| GearClawError::IoError(std::io::Error::new(
+                e.kind(),
+                format!("Failed to open config file for locking: {}", e),
+            )))?;
+
+        // Acquire exclusive lock (blocking)
+        file.lock_exclusive().map_err(|e| GearClawError::IoError(std::io::Error::new(
+            e.kind(),
+            format!("Failed to acquire file lock: {}", e),
+        )))?;
+
+        // Perform atomic write
+        let result = self.atomic_save(path);
+
+        // Release lock
+        file.unlock().map_err(|e| GearClawError::IoError(std::io::Error::new(
+            e.kind(),
+            format!("Failed to release file lock: {}", e),
+        )))?;
+
+        result
+    }
+
+    /// Save configuration with non-blocking file locking
+    ///
+    /// This method tries to acquire an exclusive file lock without blocking.
+    /// If the lock is held by another process, it returns an error immediately.
+    ///
+    /// Returns a specific error if the file is locked (WouldBlock kind).
+    pub fn save_with_lock_nonblocking(
+        &self,
+        path: &PathBuf,
+    ) -> Result<(), GearClawError> {
+        use fs2::FileExt;
+        use std::fs::OpenOptions;
+
+        let file = OpenOptions::new()
+            .write(true)
+            .create(true)
+            .open(path)
+            .map_err(|e| GearClawError::IoError(std::io::Error::new(
+                e.kind(),
+                format!("Failed to open config file for locking: {}", e),
+            )))?;
+
+        // Try to acquire exclusive lock (non-blocking)
+        file.try_lock_exclusive().map_err(|e| {
+            if e.kind() == std::io::ErrorKind::WouldBlock {
+                GearClawError::IoError(std::io::Error::new(
+                    std::io::ErrorKind::WouldBlock,
+                    "Config file is locked by another process".to_string(),
+                ))
+            } else {
+                GearClawError::IoError(std::io::Error::new(
+                    e.kind(),
+                    format!("Failed to acquire file lock: {}", e),
+                ))
+            }
+        })?;
+
+        // Perform atomic write
+        let result = self.atomic_save(path);
+
+        // Release lock
+        file.unlock().map_err(|e| GearClawError::IoError(std::io::Error::new(
+            e.kind(),
+            format!("Failed to release file lock: {}", e),
+        )))?;
+
+        result
+    }
+
+    /// Internal atomic save implementation
+    ///
+    /// Writes to a temporary file, then atomically renames it.
+    /// This ensures that either the old config or the new config is readable,
+    /// never a partially written file.
+    fn atomic_save(&self, path: &PathBuf) -> Result<(), GearClawError> {
+        let temp_path = path.with_extension("tmp");
+
+        // Serialize to YAML
+        let content = serde_yml::to_string(self).map_err(|e| {
+            GearClawError::config_parse_error(format!("Serialization failed: {}", e))
+        })?;
+
+        // Ensure parent directory exists
+        if let Some(parent) = temp_path.parent() {
+            std::fs::create_dir_all(parent).map_err(|e| {
+                GearClawError::IoError(std::io::Error::new(
+                    e.kind(),
+                    format!("Failed to create parent directory: {}", e),
+                ))
+            })?;
+        }
+
+        // Write to temporary file
+        std::fs::write(&temp_path, &content).map_err(|e| {
+            GearClawError::IoError(std::io::Error::new(
+                e.kind(),
+                format!("Failed to write temp file: {}", e),
+            ))
+        })?;
+
+        // Atomically rename (overwrites old file if it exists)
+        std::fs::rename(&temp_path, path).map_err(|e| {
+            // Clean up temp file if rename fails
+            let _ = std::fs::remove_file(&temp_path);
+            GearClawError::IoError(std::io::Error::new(
+                e.kind(),
+                format!("Failed to rename temp file: {}", e),
+            ))
+        })?;
+
         Ok(())
     }
 

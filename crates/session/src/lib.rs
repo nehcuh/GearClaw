@@ -1,9 +1,12 @@
 use chrono::{DateTime, Utc};
 use gearclaw_llm::Message;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::fmt;
 use std::path::PathBuf;
+use std::sync::Arc;
 use thiserror::Error;
+use tokio::sync::Mutex as TokioMutex;
 const MAX_SESSION_ID_LENGTH: usize = 128;
 
 #[derive(Debug, Error)]
@@ -70,6 +73,17 @@ impl fmt::Display for Session {
 
 pub struct SessionManager {
     session_dir: PathBuf,
+    /// Session-level locks to prevent concurrent modifications
+    session_locks: Arc<TokioMutex<HashMap<String, Arc<TokioMutex<()>>>>>,
+}
+
+impl Clone for SessionManager {
+    fn clone(&self) -> Self {
+        Self {
+            session_dir: self.session_dir.clone(),
+            session_locks: Arc::clone(&self.session_locks),
+        }
+    }
 }
 
 impl SessionManager {
@@ -78,7 +92,77 @@ impl SessionManager {
             std::fs::create_dir_all(&session_dir)?;
         }
         let session_dir = std::fs::canonicalize(session_dir)?;
-        Ok(Self { session_dir })
+        Ok(Self {
+            session_dir,
+            session_locks: Arc::new(TokioMutex::new(HashMap::new())),
+        })
+    }
+
+    /// Get or create a session-level lock for the given session ID
+    async fn get_session_lock(&self, id: &str) -> Arc<TokioMutex<()>> {
+        let mut locks = self.session_locks.lock().await;
+        if !locks.contains_key(id) {
+            locks.insert(id.to_string(), Arc::new(TokioMutex::new(())));
+        }
+        Arc::clone(locks.get(id).unwrap())
+    }
+
+    /// Atomic operation: load session, execute callback, save
+    ///
+    /// This method ensures that the session is loaded, modified, and saved atomically,
+    /// preventing race conditions when multiple tasks modify the same session.
+    pub async fn with_session<F, T>(&self, id: &str, f: F) -> Result<T, SessionError>
+    where
+        F: for<'a> FnOnce(&'a mut Session) -> Result<T, SessionError>,
+    {
+        let lock = self.get_session_lock(id).await;
+        let _guard = lock.lock().await;
+
+        let mut session = self.get_or_create_session(id)?;
+        let result = f(&mut session)?;
+        self.save_session(&session).await?;
+
+        Ok(result)
+    }
+
+    /// Atomic operation: add a message to a session
+    ///
+    /// This is a convenience method that adds a message to the session atomically.
+    pub async fn add_message(&self, id: &str, message: Message) -> Result<(), SessionError> {
+        self.with_session(id, |session| {
+            session.add_message(message);
+            Ok(())
+        })
+        .await
+    }
+
+    /// Atomic operation: clear session history
+    ///
+    /// This is a convenience method that clears the session history atomically.
+    pub async fn clear_history(&self, id: &str) -> Result<(), SessionError> {
+        self.with_session(id, |session| {
+            session.clear_history();
+            Ok(())
+        })
+        .await
+    }
+
+    /// Atomic operation for async callbacks: load session, execute async callback, save
+    ///
+    /// This method ensures that the session is loaded, modified, and saved atomically,
+    /// preventing race conditions when multiple async tasks modify the same session.
+    pub async fn with_session_async<F, T>(&self, id: &str, f: F) -> Result<T, SessionError>
+    where
+        F: for<'a> FnOnce(&'a mut Session) -> futures::future::BoxFuture<'a, Result<T, SessionError>>,
+    {
+        let lock = self.get_session_lock(id).await;
+        let _guard = lock.lock().await;
+
+        let mut session = self.get_or_create_session(id)?;
+        let result = f(&mut session).await?;
+        self.save_session(&session).await?;
+
+        Ok(result)
     }
 
     pub fn list_sessions(&self) -> Result<Vec<String>, SessionError> {
