@@ -327,7 +327,7 @@ impl DesktopApp {
             let _ = std::fs::create_dir_all(parent);
         }
 
-        match config.save(&config_path) {
+        match config.save_with_lock_nonblocking(&config_path) {
             Ok(_) => {
                 self.messages.push(crate::app::ChatMessage {
                     role: "assistant".to_string(),
@@ -336,9 +336,14 @@ impl DesktopApp {
                 self.view_mode = ViewMode::Chat;
             }
             Err(e) => {
+                let error_msg = if e.to_string().contains("locked by another process") {
+                    "Config file is busy (another process is writing). Please try again.".to_string()
+                } else {
+                    format!("Failed to save settings: {}", e)
+                };
                 self.messages.push(crate::app::ChatMessage {
                     role: "error".to_string(),
-                    content: format!("Failed to save settings: {}", e),
+                    content: error_msg,
                 });
             }
         }

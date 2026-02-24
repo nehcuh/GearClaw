@@ -1,3 +1,27 @@
+# Build artifacts
 /target
+
+# User configuration (should not be committed)
 gearclaw.toml
+
+# Temporary files
 test_success.txt
+test_dir/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Debug logs
+*.log
+
+# Session and memory data (optional, uncomment if needed)
+# ~/.gearclaw/sessions/
+# ~/.gearclaw/memory/

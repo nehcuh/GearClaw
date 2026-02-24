@@ -81,7 +81,7 @@ async fn main() -> Result<(), GearClawError> {
         let path = output
             .clone()
             .unwrap_or_else(|| std::path::PathBuf::from("./gearclaw.sample.toml"));
-        sample_config.save(&path)?;
+        sample_config.save_with_lock(&path)?;
         println!("✅ 示例配置已生成: {:?}", path);
         return Ok(());
     }
@@ -430,7 +430,7 @@ echo "Hello from GearClaw Skill!"
     }
 
     // Save config
-    config.save(&config_path)?;
+    config.save_with_lock(&config_path)?;
     println!("✅ 配置文件已保存: {:?}", config_path);
 
     println!("\n🎉 初始化完成! 你现在可以运行 `gearclaw` 开始使用了。");
@@ -1518,7 +1518,7 @@ async fn handle_mcp_subcommand(
                 .mcp
                 .servers
                 .insert(entry.id.to_string(), server_cfg.clone());
-            updated_config.save(config_path)?;
+            updated_config.save_with_lock(config_path)?;
             // Update live manager
             agent
                 .mcp_manager
@@ -1543,7 +1543,7 @@ async fn handle_mcp_subcommand(
                 return Ok(());
             }
             updated_config.mcp.servers.get_mut(&name).unwrap().enabled = true;
-            updated_config.save(config_path)?;
+            updated_config.save_with_lock(config_path)?;
             agent.mcp_manager.set_server_enabled(&name, true).await?;
             println!("\u{2705} 已启用 MCP 服务器: {}", name);
         }
@@ -1555,7 +1555,7 @@ async fn handle_mcp_subcommand(
                 return Ok(());
             }
             updated_config.mcp.servers.get_mut(&name).unwrap().enabled = false;
-            updated_config.save(config_path)?;
+            updated_config.save_with_lock(config_path)?;
             agent.mcp_manager.set_server_enabled(&name, false).await?;
             println!("\u{2705} 已禁用 MCP 服务器: {}", name);
         }

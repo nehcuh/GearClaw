@@ -56,7 +56,7 @@ cargo run -p gearclaw_cli -- gateway
 
 ## 4. 当前状态说明
 
-1. **MCP 能力默认禁用**（构建能力为 disabled）。
+1. **MCP 能力已完全实现**：支持 13 个内置服务器，Agent 可自主搜索并安装 MCP 服务器。
 2. 工作区默认成员为 CLI/核心子系统/Gateway/Channels；GUI crate 在 workspace 中暂时注释，需要单独按需构建。
 3. 文档已统一到 `docs/` 目录（根目录仅保留本 README）。
 

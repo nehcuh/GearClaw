@@ -2,6 +2,7 @@
 //! Delegates to `gearclaw_session` while preserving `gearclaw_core` API.
 use crate::config::SessionConfig;
 use crate::error::GearClawError;
+use gearclaw_llm::Message;
 
 pub use gearclaw_session::Session;
 
@@ -47,6 +48,31 @@ impl SessionManager {
         self.inner.delete_session(id).map_err(|e| {
             GearClawError::from(crate::error::DomainError::Session {
                 operation: format!("delete_session({})", id),
+                reason: e.to_string(),
+            })
+        })
+    }
+
+    /// Atomic operation: add a message to a session
+    ///
+    /// This is a convenience method that adds a message to the session atomically,
+    /// preventing race conditions when multiple tasks modify the same session.
+    pub async fn add_message(&self, id: &str, message: Message) -> Result<(), GearClawError> {
+        self.inner.add_message(id, message).await.map_err(|e| {
+            GearClawError::from(crate::error::DomainError::Session {
+                operation: format!("add_message({})", id),
+                reason: e.to_string(),
+            })
+        })
+    }
+
+    /// Atomic operation: clear session history
+    ///
+    /// This is a convenience method that clears the session history atomically.
+    pub async fn clear_history(&self, id: &str) -> Result<(), GearClawError> {
+        self.inner.clear_history(id).await.map_err(|e| {
+            GearClawError::from(crate::error::DomainError::Session {
+                operation: format!("clear_history({})", id),
                 reason: e.to_string(),
             })
         })
