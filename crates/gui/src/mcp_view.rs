@@ -43,8 +43,16 @@ impl DesktopApp {
                         .child("No servers configured. Use the search below or edit ~/.gearclaw/config.toml."),
                 )
             })
-            .children(self.mcp_configured.iter().map(|(name, enabled)| {
+            .children(self.mcp_configured.iter().enumerate().map(|(i, (name, enabled))| {
+                let name_clone_toggle = name.clone();
+                let name_clone_delete = name.clone();
                 let label = if *enabled { "✅ Enabled" } else { "⏸ Disabled" };
+                let status_color = if *enabled {
+                    gpui::rgb(0x2ea043) // Green for enabled
+                } else {
+                    gpui::rgb(0x6e7681) // Gray for disabled
+                };
+
                 div()
                     .border_1()
                     .border_color(border)
@@ -61,9 +69,58 @@ impl DesktopApp {
                             .flex()
                             .flex_col()
                             .gap(px(2.))
-                            .child(div().text_sm().child(name.clone())),
+                            .child(div().text_sm().font_weight(FontWeight::MEDIUM).child(name.clone())),
                     )
-                    .child(div().text_xs().text_color(text_muted).child(label))
+                    .child(
+                        div()
+                            .flex()
+                            .flex_row()
+                            .items_center()
+                            .gap(px(8.))
+                            // Status label
+                            .child(
+                                div()
+                                    .text_xs()
+                                    .text_color(status_color)
+                                    .child(label)
+                            )
+                            // Toggle button
+                            .child(
+                                div()
+                                    .id("mcp-toggle")
+                                    .px(px(10.))
+                                    .py(px(4.))
+                                    .border_1()
+                                    .border_color(if *enabled { theme::accent(cx) } else { border })
+                                    .rounded_md()
+                                    .cursor_pointer()
+                                    .text_xs()
+                                    .text_color(if *enabled { theme::accent(cx) } else { text_muted })
+                                    .child(if *enabled { "Disable" } else { "Enable" })
+                                    .hover(|s| s.opacity(0.8))
+                                    .on_click(cx.listener(move |this, _event, _window, cx| {
+                                        this.toggle_mcp_server(name_clone_toggle.clone(), cx);
+                                    })),
+                            )
+                            // Delete button
+                            .child(
+                                div()
+                                    .id("mcp-delete")
+                                    .px(px(8.))
+                                    .py(px(4.))
+                                    .border_1()
+                                    .border_color(gpui::rgb(0xda3633)) // Red
+                                    .rounded_md()
+                                    .cursor_pointer()
+                                    .text_xs()
+                                    .text_color(gpui::rgb(0xda3633))
+                                    .child("✕")
+                                    .hover(|s| s.opacity(0.8))
+                                    .on_click(cx.listener(move |this, _event, _window, cx| {
+                                        this.delete_mcp_server(name_clone_delete.clone(), cx);
+                                    })),
+                            )
+                    )
             }))
             // Separator
             .child(div().h(px(1.)).bg(border).my(px(4.)))
