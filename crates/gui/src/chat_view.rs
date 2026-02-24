@@ -13,7 +13,8 @@ impl DesktopApp {
 
         div()
             .id("chat-scroll")
-            .h(px(500.0))
+            .flex_grow()
+            .min_h(px(0.0))
             .overflow_y_scroll()
             .p(px(16.))
             .flex()

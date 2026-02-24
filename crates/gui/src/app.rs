@@ -6,6 +6,7 @@ use gpui::prelude::FluentBuilder;
 use gpui::*;
 
 use gearclaw_core::config::Config;
+use gearclaw_core::skills::SkillManager;
 
 use crate::multiline_input::MultiLineTextInput;
 use crate::text_input::TextInput;
@@ -15,8 +16,30 @@ use crate::theme;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ViewMode {
     Chat,
-    Settings,
+    Memory,
+    Mcp,
+    Skills,
     Monitor,
+    Settings,
+}
+
+/// Active tab in the Settings view.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SettingsTab {
+    Llm,
+    Agent,
+    Tools,
+    Memory,
+    Session,
+}
+
+/// A single memory search result shown in the Memory view.
+#[derive(Debug, Clone)]
+pub struct MemoryHit {
+    pub score: f32,
+    pub path: String,
+    pub preview: String,
+    pub line: usize,
 }
 
 /// A single chat message displayed in the UI.
@@ -91,6 +114,27 @@ pub struct DesktopApp {
     pub setting_session_dir: Entity<TextInput>,
     pub setting_session_save_interval: Entity<TextInput>,
 
+    // Settings
+    pub settings_tab: SettingsTab,
+
+    // MCP view state
+    pub mcp_search_input: Entity<TextInput>,
+    pub mcp_registry_results: Vec<&'static gearclaw_mcp::RegistryEntry>,
+    pub mcp_configured: Vec<(String, bool)>, // (name, enabled)
+
+    // Memory view state
+    pub memory_search_input: Entity<TextInput>,
+    pub memory_results: Vec<MemoryHit>,
+    pub memory_is_searching: bool,
+
+    // Skills view state
+    pub loaded_skills: Vec<(String, String, String)>, // (name, description, path)
+    pub skills_path_label: String,
+
+    // Derived config info for display
+    pub config_model_name: String,
+    pub config_memory_enabled: bool,
+
     // Log filters
     pub log_filter: Entity<TextInput>,
     pub log_level_filter: LogLevelFilter,
@@ -102,11 +146,6 @@ pub struct DesktopApp {
     pub status_memory: String,
     pub status_mcp: String,
     pub status_updated_at: Option<String>,
-
-    // Toggles
-    pub skills_on: bool,
-    pub memory_on: bool,
-    pub security_full: bool,
 }
 
 impl DesktopApp {
@@ -208,6 +247,33 @@ impl DesktopApp {
             ti
         });
         let log_filter = cx.new(|cx| TextInput::new("Filter logs...", cx));
+
+        // New view search inputs
+        let mcp_search_input = cx.new(|cx| TextInput::new("Search MCP registry...", cx));
+        let memory_search_input = cx.new(|cx| TextInput::new("Search memories...", cx));
+
+        // Load skills at startup
+        let skills_path = config.agent.skills_path.clone();
+        let skills_path_label = skills_path.to_string_lossy().to_string();
+        let mut skill_manager = SkillManager::new();
+        let _ = skill_manager.load_from_dir(&skills_path);
+        let loaded_skills: Vec<(String, String, String)> = skill_manager
+            .skills
+            .into_iter()
+            .map(|s| (s.name, s.description, s.path.to_string_lossy().to_string()))
+            .collect();
+
+        // Collect MCP configured servers
+        let mcp_configured: Vec<(String, bool)> = config
+            .mcp
+            .servers
+            .iter()
+            .map(|(k, v)| (k.clone(), v.enabled))
+            .collect();
+
+        let config_model_name = model.clone();
+        let config_memory_enabled = memory_enabled;
+
         DesktopApp {
             messages: Vec::new(),
             session_messages: HashMap::new(),
@@ -240,6 +306,17 @@ impl DesktopApp {
             setting_memory_db_path,
             setting_session_dir,
             setting_session_save_interval,
+            settings_tab: crate::app::SettingsTab::Llm,
+            mcp_search_input,
+            mcp_registry_results: Vec::new(),
+            mcp_configured,
+            memory_search_input,
+            memory_results: Vec::new(),
+            memory_is_searching: false,
+            loaded_skills,
+            skills_path_label,
+            config_model_name,
+            config_memory_enabled,
             log_filter,
             log_level_filter: LogLevelFilter::All,
             status_gateway: "Unknown".to_string(),
@@ -248,9 +325,6 @@ impl DesktopApp {
             status_memory: "Unknown".to_string(),
             status_mcp: "Unknown".to_string(),
             status_updated_at: None,
-            skills_on: true,
-            memory_on: true,
-            security_full: true,
         }
     }
 
@@ -422,6 +496,94 @@ impl DesktopApp {
         self.on_send(window, cx);
     }
 
+    pub fn on_mcp_search(&mut self, cx: &mut Context<Self>) {
+        let query = self.mcp_search_input.read(cx).content().to_string();
+        self.mcp_registry_results = gearclaw_mcp::search_registry(&query);
+        cx.notify();
+    }
+
+    pub fn on_memory_search(&mut self, cx: &mut Context<Self>) {
+        if self.memory_is_searching {
+            return;
+        }
+        let query = self.memory_search_input.read(cx).content().to_string();
+        if query.trim().is_empty() {
+            return;
+        }
+        self.memory_is_searching = true;
+        self.memory_results.clear();
+        cx.notify();
+
+        let runtime = self.runtime.clone();
+        let task = cx.background_spawn(async move {
+            let join_handle = runtime.spawn(async move {
+                let config = Config::load(&None).map_err(|e| format!("Config error: {}", e))?;
+                if config.llm.api_key.is_none() {
+                    return Err("No API key configured — cannot run memory search".to_string());
+                }
+                use gearclaw_llm::LLMClient;
+                use gearclaw_memory::{MemoryConfig, MemoryManager};
+                use std::sync::Arc;
+                let llm_client = Arc::new(LLMClient::new(
+                    config.llm.api_key.clone().unwrap_or_default(),
+                    config.llm.endpoint.clone(),
+                    config.llm.embedding_endpoint.clone(),
+                    config.llm.primary.clone(),
+                    config.llm.embedding_model.clone(),
+                    config.llm.temperature,
+                ));
+                let mem_config = MemoryConfig {
+                    enabled: true,
+                    db_path: config.memory.db_path.clone(),
+                };
+                let manager = MemoryManager::new(
+                    mem_config,
+                    config.agent.workspace.clone(),
+                    llm_client,
+                )
+                .map_err(|e| format!("Memory init error: {}", e))?;
+                let results = manager
+                    .search(&query, 10)
+                    .await
+                    .map_err(|e| format!("Search error: {}", e))?;
+                Ok::<Vec<gearclaw_memory::SearchResult>, String>(results)
+            });
+            join_handle
+                .await
+                .map_err(|e| format!("Task join error: {}", e))?
+        });
+
+        cx.spawn(async move |this, cx| {
+            let result = task.await;
+            let _ = this.update(cx, |this, cx| {
+                this.memory_is_searching = false;
+                match result {
+                    Ok(results) => {
+                        this.memory_results = results
+                            .into_iter()
+                            .map(|r| MemoryHit {
+                                score: r.score,
+                                path: r.path,
+                                preview: r.text.chars().take(120).collect(),
+                                line: r.start_line.unwrap_or(0),
+                            })
+                            .collect();
+                    }
+                    Err(e) => {
+                        this.memory_results = vec![MemoryHit {
+                            score: 0.0,
+                            path: "(error)".to_string(),
+                            preview: e,
+                            line: 0,
+                        }];
+                    }
+                }
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
     async fn run_agent(
         user_message: String,
         cancel_flag: Arc<AtomicBool>,
@@ -470,6 +632,27 @@ impl Render for DesktopApp {
                 .bg(theme::bg(cx))
                 .child(self.render_chat(cx))
                 .child(self.render_input_bar(cx)),
+            ViewMode::Memory => div()
+                .flex()
+                .flex_col()
+                .flex_grow()
+                .min_h(px(0.0))
+                .bg(theme::bg(cx))
+                .child(self.render_memory(cx)),
+            ViewMode::Mcp => div()
+                .flex()
+                .flex_col()
+                .flex_grow()
+                .min_h(px(0.0))
+                .bg(theme::bg(cx))
+                .child(self.render_mcp(cx)),
+            ViewMode::Skills => div()
+                .flex()
+                .flex_col()
+                .flex_grow()
+                .min_h(px(0.0))
+                .bg(theme::bg(cx))
+                .child(self.render_skills(cx)),
             ViewMode::Settings => div()
                 .flex()
                 .flex_col()
@@ -494,7 +677,6 @@ impl Render for DesktopApp {
             .size_full()
             .bg(theme::bg(cx))
             .text_color(theme::text(cx))
-            .font_family("Menlo")
             .track_focus(&self.focus_handle(cx))
             .on_action(cx.listener(Self::on_send_action))
             .child(

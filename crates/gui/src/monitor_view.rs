@@ -13,6 +13,13 @@ impl DesktopApp {
             .clone()
             .unwrap_or_else(|| "Never".to_string());
 
+        let skills_val = format!("{} loaded", self.loaded_skills.len());
+        let mcp_configured = self.mcp_configured.len();
+        let mcp_enabled = self.mcp_configured.iter().filter(|(_, e)| *e).count();
+        let mcp_val = format!("{} configured, {} enabled", mcp_configured, mcp_enabled);
+        let model_val = self.config_model_name.clone();
+        let memory_val = if self.config_memory_enabled { "Enabled" } else { "Disabled" }.to_string();
+
         div()
             .id("monitor-scroll")
             .flex_grow()
@@ -22,23 +29,12 @@ impl DesktopApp {
             .flex_col()
             .gap(px(12.))
             .child(div().text_xl().child("🩺 System Monitor"))
-            .child(
-                div()
-                    .text_sm()
-                    .text_color(text_muted)
-                    .child("Status data is placeholder until gateway reporting is wired."),
-            )
+            .child(self.render_status_card("Model", &model_val, card_bg, border, cx))
+            .child(self.render_status_card("Memory", &memory_val, card_bg, border, cx))
+            .child(self.render_status_card("Skills", &skills_val, card_bg, border, cx))
+            .child(self.render_status_card("MCP", &mcp_val, card_bg, border, cx))
             .child(self.render_status_card("Gateway", &self.status_gateway, card_bg, border, cx))
-            .child(self.render_status_card(
-                "Channels",
-                &self.status_channels,
-                card_bg,
-                border,
-                cx,
-            ))
-            .child(self.render_status_card("LLM", &self.status_llm, card_bg, border, cx))
-            .child(self.render_status_card("Memory", &self.status_memory, card_bg, border, cx))
-            .child(self.render_status_card("MCP", &self.status_mcp, card_bg, border, cx))
+            .child(self.render_status_card("LLM API", &self.status_llm, card_bg, border, cx))
             .child(
                 div()
                     .flex()
@@ -74,8 +70,8 @@ impl DesktopApp {
         &self,
         title: &str,
         value: &str,
-        card_bg: gpui::Hsla,
-        border: gpui::Hsla,
+        card_bg: gpui::Rgba,
+        border: gpui::Rgba,
         _cx: &mut Context<Self>,
     ) -> impl IntoElement {
         div()

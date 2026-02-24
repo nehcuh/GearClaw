@@ -6,6 +6,9 @@ use crate::theme::Theme;
 impl DesktopApp {
     pub fn render_status_bar(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let current_mode = theme::mode(cx);
+        let mcp_count = self.mcp_configured.iter().filter(|(_, e)| *e).count();
+        let memory_label = if self.config_memory_enabled { "ON" } else { "OFF" };
+
         div()
             .h(px(28.))
             .bg(theme::accent(cx))
@@ -15,6 +18,7 @@ impl DesktopApp {
             .gap(px(16.))
             .text_xs()
             .text_color(gpui::white())
+            // Status
             .child(
                 if self.is_loading {
                     "⏳ Processing..."
@@ -22,64 +26,36 @@ impl DesktopApp {
                     "🟢 Ready"
                 },
             )
+            // Model name
             .child(
                 div()
-                    .id("status-gateway")
-                    .child(format!("GW: {}", self.status_gateway)),
+                    .id("status-model")
+                    .opacity(0.85)
+                    .child(self.config_model_name.clone()),
             )
+            // MCP count
             .child(
                 div()
-                    .id("status-llm")
-                    .child(format!("LLM: {}", self.status_llm)),
+                    .id("status-mcp")
+                    .opacity(0.85)
+                    .child(format!("MCP:{}", mcp_count)),
             )
+            // Memory status
             .child(
                 div()
-                    .id("toggle-skills")
-                    .cursor_pointer()
-                    .hover(|s| s.opacity(0.8))
-                    .child(format!(
-                        "🔧 Skills: {}",
-                        if self.skills_on { "ON" } else { "OFF" }
-                    ))
-                    .on_click(cx.listener(|this, _event, _window, cx| {
-                        this.skills_on = !this.skills_on;
-                        cx.notify();
-                    })),
+                    .id("status-memory")
+                    .opacity(0.85)
+                    .child(format!("Memory:{}", memory_label)),
             )
-            .child(
-                div()
-                    .id("toggle-memory")
-                    .cursor_pointer()
-                    .hover(|s| s.opacity(0.8))
-                    .child(format!(
-                        "🧠 Memory: {}",
-                        if self.memory_on { "ON" } else { "OFF" }
-                    ))
-                    .on_click(cx.listener(|this, _event, _window, cx| {
-                        this.memory_on = !this.memory_on;
-                        cx.notify();
-                    })),
-            )
-            .child(
-                div()
-                    .id("toggle-security")
-                    .cursor_pointer()
-                    .hover(|s| s.opacity(0.8))
-                    .child(format!(
-                        "🛡️ Mode: {}",
-                        if self.security_full { "Full" } else { "Safe" }
-                    ))
-                    .on_click(cx.listener(|this, _event, _window, cx| {
-                        this.security_full = !this.security_full;
-                        cx.notify();
-                    })),
-            )
+            // Spacer
+            .child(div().flex_grow())
+            // Theme toggle
             .child(
                 div()
                     .id("toggle-theme")
                     .cursor_pointer()
                     .hover(|s| s.opacity(0.8))
-                    .child(format!("🎨 Theme: {}", current_mode.label()))
+                    .child(format!("Theme: {}", current_mode.label()))
                     .on_click(cx.listener(|_this, _event, window, cx| {
                         let current = theme::mode(cx);
                         let new_mode = current.next();
@@ -88,6 +64,7 @@ impl DesktopApp {
                         cx.notify();
                     })),
             )
+            // Logs toggle
             .child(
                 div()
                     .id("toggle-logs")

@@ -3,10 +3,13 @@ mod chat_view;
 mod input_bar;
 mod log_panel;
 mod log_store;
+mod mcp_view;
+mod memory_view;
 mod monitor_view;
 mod multiline_input;
 mod settings_view;
 mod sidebar;
+mod skills_view;
 mod status_bar;
 mod text_input;
 mod theme;
@@ -34,7 +37,7 @@ fn main() {
             .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")))
         .init();
 
-    Application::new().run(move |cx: &mut App| {
+    gpui_platform::application().run(move |cx: &mut App| {
         // Initialize theme from system appearance
         let appearance = cx.window_appearance();
         cx.set_global(Theme::for_appearance(appearance, ThemeMode::System));

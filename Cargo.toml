@@ -12,7 +12,7 @@ members = [
     "crates/memory",
     "crates/mcp",
     "crates/cli",
-    # "crates/gui",  # Temporarily excluded - gpui requires macOS and Xcode
+    "crates/gui",  # macOS only
     "crates/gateway",
     "crates/channels",
 ]

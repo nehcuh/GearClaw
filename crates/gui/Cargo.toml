@@ -6,7 +6,11 @@ edition = "2021"
 [dependencies]
 gearclaw_agent = { path = "../agent" }
 gearclaw_core = { path = "../core" }
+gearclaw_mcp = { path = "../mcp" }
+gearclaw_memory = { path = "../memory" }
+gearclaw_llm = { path = "../llm" }
 gpui = { git = "https://github.com/zed-industries/zed", package = "gpui" }
+gpui_platform = { git = "https://github.com/zed-industries/zed", package = "gpui_platform" }
 tokio = { version = "1.49", features = ["full"] }
 anyhow = "1.0"
 tracing = "0.1"

@@ -1,109 +1,169 @@
-use crate::app::{DesktopApp, ViewMode};
+use crate::app::{DesktopApp, SettingsTab, ViewMode};
 use crate::theme;
 use gearclaw_core::config::Config;
+use gpui::prelude::FluentBuilder;
 use gpui::*;
 
 impl DesktopApp {
-    pub fn render_settings(&self, cx: &mut Context<Self>) -> impl IntoElement {
+    pub fn render_settings(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
         let accent_hover = theme::accent_hover(cx);
         let border = theme::border(cx);
         let text_muted = theme::text_muted(cx);
+        let sidebar_active = theme::sidebar_active(cx);
+        let sidebar_hover = theme::sidebar_hover(cx);
+        let current_tab = self.settings_tab;
+
+        // Build tab header buttons first
+        let tab_bar = div()
+            .flex()
+            .flex_row()
+            .gap(px(2.))
+            .child(self.settings_tab_btn("LLM", SettingsTab::Llm, current_tab, sidebar_active, sidebar_hover, text_muted, cx))
+            .child(self.settings_tab_btn("Agent", SettingsTab::Agent, current_tab, sidebar_active, sidebar_hover, text_muted, cx))
+            .child(self.settings_tab_btn("Tools", SettingsTab::Tools, current_tab, sidebar_active, sidebar_hover, text_muted, cx))
+            .child(self.settings_tab_btn("Memory", SettingsTab::Memory, current_tab, sidebar_active, sidebar_hover, text_muted, cx))
+            .child(self.settings_tab_btn("Session", SettingsTab::Session, current_tab, sidebar_active, sidebar_hover, text_muted, cx));
+
+        // Build tab body based on current tab
+        let tab_body = self.render_settings_tab_body(cx);
 
         div()
-            .id("settings-scroll")
             .flex_grow()
-            .overflow_y_scroll()
-            .p(px(32.))
+            .min_h(px(0.0))
             .flex()
             .flex_col()
-            .gap(px(20.))
-            .child(div().text_xl().child("⚙️ Settings"))
-            .child(
-                div().text_sm().text_color(text_muted).child(
-                    "Configure LLM connection. Settings are saved to ~/.gearclaw/config.toml",
-                ),
-            )
-            .child(div().text_sm().text_color(text_muted).child("LLM"))
-            // Endpoint
-            .child(self.render_field("Endpoint", &self.setting_endpoint, cx))
-            // API Key
-            .child(self.render_field("API Key", &self.setting_api_key, cx))
-            // Model
-            .child(self.render_field("Model", &self.setting_model, cx))
-            // Embedding Model
-            .child(self.render_field("Embedding Model", &self.setting_embedding, cx))
-            // Temperature
-            .child(self.render_field("Temperature", &self.setting_temperature, cx))
-            .child(div().text_sm().text_color(text_muted).child("Agent"))
-            // Agent Name
-            .child(self.render_field("Agent Name", &self.setting_agent_name, cx))
-            // System Prompt
-            .child(self.render_multiline_field(
-                "System Prompt",
-                &self.setting_system_prompt,
-                160.0,
-                cx,
-            ))
-            .child(div().text_sm().text_color(text_muted).child("Tools"))
-            // Tools Security
-            .child(
-                self.render_field("Security Level", &self.setting_tools_security, cx),
-            )
-            // Tools Profile
-            .child(self.render_field("Profile", &self.setting_tools_profile, cx))
-            .child(div().text_sm().text_color(text_muted).child("Memory"))
-            // Memory Enabled
-            .child(self.render_field("Enabled", &self.setting_memory_enabled, cx))
-            // Memory DB Path
-            .child(self.render_field("DB Path", &self.setting_memory_db_path, cx))
-            .child(div().text_sm().text_color(text_muted).child("Session"))
-            // Session Directory
-            .child(self.render_field("Session Dir", &self.setting_session_dir, cx))
-            // Save Interval
-            .child(
-                self.render_field("Save Interval (s)", &self.setting_session_save_interval, cx),
-            )
-            // Max Tokens
-            .child(self.render_field("Max Tokens", &self.setting_session_max_tokens, cx))
-            // Save button
+            // Header
             .child(
                 div()
+                    .px(px(24.))
+                    .pt(px(20.))
+                    .pb(px(8.))
                     .flex()
-                    .flex_row()
+                    .flex_col()
                     .gap(px(12.))
+                    .child(div().text_xl().child("⚙️ Settings"))
+                    .child(tab_bar)
+                    .child(div().h(px(1.)).bg(border)),
+            )
+            // Tab content
+            .child(
+                div()
+                    .id("settings-scroll")
+                    .flex_grow()
+                    .overflow_y_scroll()
+                    .px(px(24.))
+                    .py(px(16.))
+                    .flex()
+                    .flex_col()
+                    .gap(px(16.))
+                    .child(tab_body)
                     .child(
                         div()
-                            .id("save-settings")
-                            .px(px(20.))
-                            .py(px(8.))
-                            .bg(theme::accent(cx))
-                            .rounded_md()
-                            .cursor_pointer()
-                            .text_sm()
-                            .text_color(gpui::white())
-                            .child("Save Settings")
-                            .hover(move |s| s.bg(accent_hover))
-                            .on_click(cx.listener(|this, _event, _window, cx| {
-                                this.save_settings(cx);
-                            })),
-                    )
-                    .child(
-                        div()
-                            .id("back-to-chat")
-                            .px(px(20.))
-                            .py(px(8.))
-                            .border_1()
-                            .border_color(border)
-                            .rounded_md()
-                            .cursor_pointer()
-                            .text_sm()
-                            .child("Back to Chat")
-                            .on_click(cx.listener(|this, _event, _window, cx| {
-                                this.view_mode = ViewMode::Chat;
-                                cx.notify();
-                            })),
+                            .flex()
+                            .flex_row()
+                            .gap(px(12.))
+                            .mt(px(8.))
+                            .child(
+                                div()
+                                    .id("save-settings")
+                                    .px(px(20.))
+                                    .py(px(8.))
+                                    .bg(theme::accent(cx))
+                                    .rounded_md()
+                                    .cursor_pointer()
+                                    .text_sm()
+                                    .text_color(gpui::white())
+                                    .child("Save Settings")
+                                    .hover(move |s| s.bg(accent_hover))
+                                    .on_click(cx.listener(|this, _event, _window, cx| {
+                                        this.save_settings(cx);
+                                    })),
+                            )
+                            .child(
+                                div()
+                                    .id("back-to-chat")
+                                    .px(px(20.))
+                                    .py(px(8.))
+                                    .border_1()
+                                    .border_color(border)
+                                    .rounded_md()
+                                    .cursor_pointer()
+                                    .text_sm()
+                                    .child("Back to Chat")
+                                    .on_click(cx.listener(|this, _event, _window, cx| {
+                                        this.view_mode = ViewMode::Chat;
+                                        cx.notify();
+                                    })),
+                            ),
                     ),
             )
+    }
+
+    fn render_settings_tab_body(&self, cx: &mut Context<Self>) -> Div {
+        match self.settings_tab {
+            SettingsTab::Llm => div()
+                .flex()
+                .flex_col()
+                .gap(px(12.))
+                .child(self.render_field("Endpoint", &self.setting_endpoint, cx))
+                .child(self.render_field("API Key", &self.setting_api_key, cx))
+                .child(self.render_field("Model", &self.setting_model, cx))
+                .child(self.render_field("Embedding Model", &self.setting_embedding, cx))
+                .child(self.render_field("Temperature", &self.setting_temperature, cx)),
+            SettingsTab::Agent => div()
+                .flex()
+                .flex_col()
+                .gap(px(12.))
+                .child(self.render_field("Agent Name", &self.setting_agent_name, cx))
+                .child(self.render_multiline_field("System Prompt", &self.setting_system_prompt, 160.0, cx)),
+            SettingsTab::Tools => div()
+                .flex()
+                .flex_col()
+                .gap(px(12.))
+                .child(self.render_field("Security Level", &self.setting_tools_security, cx))
+                .child(self.render_field("Profile", &self.setting_tools_profile, cx)),
+            SettingsTab::Memory => div()
+                .flex()
+                .flex_col()
+                .gap(px(12.))
+                .child(self.render_field("Enabled", &self.setting_memory_enabled, cx))
+                .child(self.render_field("DB Path", &self.setting_memory_db_path, cx)),
+            SettingsTab::Session => div()
+                .flex()
+                .flex_col()
+                .gap(px(12.))
+                .child(self.render_field("Session Dir", &self.setting_session_dir, cx))
+                .child(self.render_field("Save Interval (s)", &self.setting_session_save_interval, cx))
+                .child(self.render_field("Max Tokens", &self.setting_session_max_tokens, cx)),
+        }
+    }
+
+    fn settings_tab_btn(
+        &self,
+        label: &'static str,
+        tab: SettingsTab,
+        current: SettingsTab,
+        active_bg: gpui::Rgba,
+        hover_bg: gpui::Rgba,
+        text_muted: gpui::Rgba,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
+        let is_active = current == tab;
+        div()
+            .id(ElementId::Name(format!("stab-{}", label).into()))
+            .px(px(12.))
+            .py(px(4.))
+            .rounded_md()
+            .cursor_pointer()
+            .text_sm()
+            .text_color(text_muted)
+            .when(is_active, move |el: Stateful<Div>| el.bg(active_bg))
+            .hover(move |s: StyleRefinement| s.bg(hover_bg))
+            .child(label)
+            .on_click(cx.listener(move |this, _event, _window, cx| {
+                this.settings_tab = tab;
+                cx.notify();
+            }))
     }
 
     fn render_field(

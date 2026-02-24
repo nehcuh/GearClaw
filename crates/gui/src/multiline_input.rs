@@ -214,7 +214,6 @@ impl MultiLineTextInput {
 
             let position_within_line = position - line_origin;
             match line
-                .layout
                 .closest_index_for_position(position_within_line, line_height)
             {
                 Ok(index_within_line) | Err(index_within_line) => {
@@ -310,7 +309,6 @@ impl MultiLineTextInput {
             } else {
                 let ix_within_line = index - line_start_ix;
                 return line
-                    .layout
                     .position_for_index(ix_within_line, line_height)
                     .map(|p| line_origin + p);
             }
@@ -576,11 +574,10 @@ impl Element for MultiLineTextElement {
 
                 if line_sel_end > line_sel_start {
                     let boundary_indices = line
-                        .layout
                         .wrap_boundaries
                         .iter()
                         .map(|b| {
-                            line.layout.unwrapped_layout.runs[b.run_ix].glyphs[b.glyph_ix].index
+                            line.unwrapped_layout.runs[b.run_ix].glyphs[b.glyph_ix].index
                         })
                         .collect::<Vec<_>>();
                     let mut seg_start = 0usize;
@@ -594,15 +591,13 @@ impl Element for MultiLineTextElement {
                         let sel_end = line_sel_end.min(seg_end);
                         if sel_end > sel_start {
                             let start_x = line
-                                .layout
                                 .position_for_index(sel_start, line_height)
                                 .map(|p| p.x)
                                 .unwrap_or(px(0.));
                             let end_x = line
-                                .layout
                                 .position_for_index(sel_end, line_height)
                                 .map(|p| p.x)
-                                .unwrap_or(line.layout.width());
+                                .unwrap_or(line.width());
                             let y = line_origin.y + line_height * seg_idx;
                             quads.push(fill(
                                 Bounds::from_corners(
@@ -679,7 +674,7 @@ impl Element for MultiLineTextElement {
                 window,
                 cx,
             )
-            .log_err();
+            .ok();
             line.paint(
                 line_origin,
                 prepaint.line_height,
@@ -688,7 +683,7 @@ impl Element for MultiLineTextElement {
                 window,
                 cx,
             )
-            .log_err();
+            .ok();
             line_origin.y += line.size(prepaint.line_height).height;
         }
 
@@ -699,7 +694,7 @@ impl Element for MultiLineTextElement {
         }
 
         self.input.update(cx, |input, _cx| {
-            input.last_lines = Some(prepaint.lines.clone());
+            input.last_lines = Some(std::mem::take(&mut prepaint.lines));
             input.last_bounds = Some(prepaint.bounds);
             input.last_line_height = Some(prepaint.line_height);
         });
@@ -745,6 +740,7 @@ impl Render for MultiLineTextInput {
                     .py(px(6.))
                     .bg(theme::input_bg(cx))
                     .rounded_md()
+                    .id("multiline-scroll-inner")
                     .overflow_y_scroll()
                     .child(
                         div()
