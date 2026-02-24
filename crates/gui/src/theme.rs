@@ -62,7 +62,7 @@ fn rgba(r: u8, g: u8, b: u8) -> Rgba {
 impl Theme {
     pub fn dark() -> Self {
         Theme {
-            mode: ThemeMode::System,
+            mode: ThemeMode::Dark,
             is_dark: true,
             bg: rgba(0x1e, 0x1e, 0x1e),
             sidebar_bg: rgba(0x25, 0x25, 0x26),
@@ -71,8 +71,8 @@ impl Theme {
             border: rgba(0x33, 0x33, 0x33),
             accent: rgba(0x00, 0x7a, 0xcc),
             accent_hover: rgba(0x1c, 0x8c, 0xd9),
-            text: rgba(0xcc, 0xcc, 0xcc),
-            text_muted: rgba(0x80, 0x80, 0x80),
+            text: rgba(0xff, 0xff, 0xff), // Pure white for maximum contrast
+            text_muted: rgba(0xaa, 0xaa, 0xaa), // Much brighter gray
             user_bubble: rgba(0x26, 0x4f, 0x78),
             assistant_bubble: rgba(0x2d, 0x2d, 0x2d),
             error_color: rgba(0xf4, 0x43, 0x36),

@@ -677,6 +677,7 @@ impl Render for DesktopApp {
             .size_full()
             .bg(theme::bg(cx))
             .text_color(theme::text(cx))
+            .font_family("Menlo") // Use specific monospace font
             .track_focus(&self.focus_handle(cx))
             .on_action(cx.listener(Self::on_send_action))
             .child(

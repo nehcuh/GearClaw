@@ -75,6 +75,7 @@ impl DesktopApp {
             .gap(px(8.))
             .text_sm()
             .text_color(if is_active { text_c } else { text_muted_c })
+            .font_family("Menlo") // Add font family to nav buttons
             .when(is_active, move |el: Stateful<Div>| el.bg(active_bg))
             .hover(move |s: StyleRefinement| s.bg(hover_bg))
             .child(icon)

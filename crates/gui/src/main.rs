@@ -38,9 +38,9 @@ fn main() {
         .init();
 
     gpui_platform::application().run(move |cx: &mut App| {
-        // Initialize theme from system appearance
+        // Initialize theme - force dark mode for better contrast
         let appearance = cx.window_appearance();
-        cx.set_global(Theme::for_appearance(appearance, ThemeMode::System));
+        cx.set_global(Theme::for_appearance(appearance, ThemeMode::Dark));
 
         // Register log store as global
         cx.set_global(log_store.clone());
