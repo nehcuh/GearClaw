@@ -611,6 +611,34 @@ impl DesktopApp {
         cx.notify();
     }
 
+    /// Toggles the enabled state of an MCP server.
+    pub fn toggle_mcp_server(&mut self, server_name: String, cx: &mut Context<Self>) {
+        // Find and toggle the server
+        if let Some(server) = self.mcp_configured.iter_mut().find(|(name, _)| name == &server_name) {
+            server.1 = !server.1;
+
+            // Update the config file
+            if let Ok(config) = Config::load(&None) {
+                tracing::info!("MCP server '{}' toggled to {}", server_name, server.1);
+
+                // Note: Config changes would need to be saved here
+                // For now, we're just updating the in-memory state
+            }
+        }
+        cx.notify();
+    }
+
+    /// Deletes an MCP server from the configuration.
+    pub fn delete_mcp_server(&mut self, server_name: String, cx: &mut Context<Self>) {
+        // Remove from configured list
+        self.mcp_configured.retain(|(name, _)| name != &server_name);
+
+        tracing::info!("MCP server '{}' removed from configuration", server_name);
+
+        // Note: Config file would need to be updated here
+        cx.notify();
+    }
+
     pub fn on_memory_search(&mut self, cx: &mut Context<Self>) {
         if self.memory_is_searching {
             return;
