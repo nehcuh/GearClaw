@@ -4,11 +4,13 @@ use std::sync::Arc;
 
 use gpui::prelude::FluentBuilder;
 use gpui::*;
+use serde::{Deserialize, Serialize};
 
 use gearclaw_core::config::Config;
 use gearclaw_core::skills::SkillManager;
 
 use crate::multiline_input::MultiLineTextInput;
+use crate::session_store::SessionStore;
 use crate::text_input::TextInput;
 use crate::theme;
 
@@ -43,7 +45,7 @@ pub struct MemoryHit {
 }
 
 /// A single chat message displayed in the UI.
-#[derive(Clone)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ChatMessage {
     pub role: String, // "user", "assistant", "error"
     pub content: String,
@@ -86,6 +88,7 @@ pub struct DesktopApp {
     pub session_messages: HashMap<usize, Vec<ChatMessage>>,
     pub sessions: Vec<String>,
     pub active_session: usize,
+    pub session_store: Option<SessionStore>,
 
     // UI state
     pub input: Entity<TextInput>,
@@ -159,6 +162,44 @@ impl DesktopApp {
         let (config, config_exists) = match Config::load(&None) {
             Ok(config) => (config, true),
             Err(_) => (Config::sample(), false),
+        };
+
+        // Initialize session store
+        let session_store = SessionStore::new(config.session.session_dir.join("sessions/"))
+            .ok(); // Don't fail if we can't create the store
+
+        // Load existing sessions from disk
+        let (sessions, messages, session_messages, active_session) = if let Some(store) = &session_store {
+            match store.load_sessions() {
+                Ok(loaded_sessions) if !loaded_sessions.is_empty() => {
+                    let session_names: Vec<String> = loaded_sessions.iter()
+                        .map(|s| s.name.clone())
+                        .collect();
+                    let mut session_map = HashMap::new();
+                    for session in &loaded_sessions {
+                        session_map.insert(session.id, session.messages.clone());
+                    }
+                    let first_session_id = loaded_sessions[0].id;
+                    let first_messages = session_map.get(&first_session_id)
+                        .cloned()
+                        .unwrap_or_default();
+
+                    (session_names, first_messages, session_map, 0)
+                }
+                _ => (
+                    vec!["Chat 1".to_string()],
+                    Vec::new(),
+                    HashMap::new(),
+                    0
+                )
+            }
+        } else {
+            (
+                vec!["Chat 1".to_string()],
+                Vec::new(),
+                HashMap::new(),
+                0
+            )
         };
 
         let endpoint = config.llm.endpoint.clone();
@@ -275,10 +316,11 @@ impl DesktopApp {
         let config_memory_enabled = memory_enabled;
 
         DesktopApp {
-            messages: Vec::new(),
-            session_messages: HashMap::new(),
-            sessions: vec!["Chat 1".to_string()],
-            active_session: 0,
+            messages,
+            session_messages,
+            sessions,
+            active_session,
+            session_store,
             input,
             focus_handle: cx.focus_handle(),
             scroll_handle: ScrollHandle::new(),
@@ -329,6 +371,9 @@ impl DesktopApp {
     }
 
     pub fn new_session(&mut self, cx: &mut Context<Self>) {
+        // Save current session to disk
+        self.save_current_session(cx);
+
         // Save current session messages
         self.session_messages
             .insert(self.active_session, std::mem::take(&mut self.messages));
@@ -345,6 +390,9 @@ impl DesktopApp {
 
     pub fn switch_session(&mut self, index: usize, cx: &mut Context<Self>) {
         if index < self.sessions.len() && index != self.active_session {
+            // Save current session to disk
+            self.save_current_session(cx);
+
             // Save current session messages
             self.session_messages
                 .insert(self.active_session, std::mem::take(&mut self.messages));
@@ -356,8 +404,65 @@ impl DesktopApp {
         }
     }
 
+    /// Saves the current session to disk.
+    fn save_current_session(&self, cx: &mut Context<Self>) {
+        if let Some(store) = &self.session_store {
+            use crate::session_store::SessionData;
+
+            let session_data = SessionData {
+                id: self.active_session,
+                name: self.sessions.get(self.active_session)
+                    .cloned()
+                    .unwrap_or_else(|| format!("Session {}", self.active_session)),
+                messages: self.messages.clone(),
+                created_at: chrono::Local::now().format("%Y-%m-%dT%H:%M:%S%.6f%:z").to_string(),
+                updated_at: chrono::Local::now().format("%Y-%m-%dT%H:%M:%S%.6f%:z").to_string(),
+            };
+
+            if let Err(e) = store.save_session(&session_data) {
+                tracing::error!("Failed to save session {}: {}", self.active_session, e);
+            } else {
+                tracing::debug!("Saved session {} to disk", self.active_session);
+            }
+        }
+        cx.notify();
+    }
+
     pub fn refresh_status(&mut self, cx: &mut Context<Self>) {
+        // Update timestamp first
         self.status_updated_at = Some(chrono::Local::now().format("%H:%M:%S").to_string());
+
+        // Check MCP status (immediate check)
+        let mcp_enabled = self.mcp_configured.iter().filter(|(_, e)| *e).count();
+        self.status_mcp = if mcp_enabled > 0 {
+            format!("{} servers", mcp_enabled)
+        } else {
+            "None configured".to_string()
+        };
+
+        // Check Memory status (immediate check)
+        self.status_memory = if self.config_memory_enabled {
+            "Enabled".to_string()
+        } else {
+            "Disabled".to_string()
+        };
+
+        // For LLM and Gateway, we'll perform async checks
+        // Set initial status to "Checking..."
+        self.status_llm = "Checking...".to_string();
+        self.status_gateway = "Checking...".to_string();
+        cx.notify();
+
+        // Spawn background task to check actual status
+        let runtime = self.runtime.clone();
+        cx.background_spawn(async move {
+            // TODO: Implement actual health checks here
+            // For now, just simulate the checks with delays
+            tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+            let llm_status = "Available".to_string();
+            let gateway_status = "Connected".to_string();
+            (llm_status, gateway_status)
+        });
         cx.notify();
     }
 
@@ -442,6 +547,10 @@ impl DesktopApp {
                         }
                     }
                     this.is_loading = false;
+
+                    // Auto-save session after message is processed
+                    this.save_current_session(cx);
+
                     cx.notify();
 
                     // Auto-scroll to bottom after next frame is rendered

@@ -7,6 +7,7 @@ mod mcp_view;
 mod memory_view;
 mod monitor_view;
 mod multiline_input;
+mod session_store;
 mod settings_view;
 mod sidebar;
 mod skills_view;
